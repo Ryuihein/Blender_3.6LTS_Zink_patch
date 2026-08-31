@@ -1,4 +1,4 @@
-name: Build Blender Android
+name: Build Blender Android (SDK, NDK & toolchain along with Cmake & Ninja)
 
 on:
   workflow_dispatch:
