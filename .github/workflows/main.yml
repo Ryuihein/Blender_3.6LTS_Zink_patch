@@ -17,14 +17,13 @@ jobs:
           distribution: 'zulu'
           java-version: '11'
 
-      - name: Set up Android SDK Manager
-        uses: android-actions/setup-android@v3
-        env:
-          SKIP_JDK_VERSION_CHECK: "true"
-
-      - name: Install NDK 21.4.7075529 and Build Tools
+      - name: Download and Install NDK 21.4.7075529 (r21e)
         run: |
-          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;21.4.7075529" "build-tools;30.0.3" "platforms;android-30"
+          mkdir -p $ANDROID_HOME/ndk
+          curl -L -o ndk.zip https://dl.google.com/android/repository/android-ndk-r21e-linux-x86_64.zip
+          unzip -q ndk.zip -d $ANDROID_HOME/ndk/
+          mv $ANDROID_HOME/ndk/android-ndk-r21e $ANDROID_HOME/ndk/21.4.7075529
+          rm ndk.zip
 
       - name: Verify Toolchain Setup
         run: |
