@@ -19,6 +19,8 @@ jobs:
 
       - name: Set up Android SDK Manager
         uses: android-actions/setup-android@v3
+        env:
+          SKIP_JDK_VERSION_CHECK: "true"
 
       - name: Install NDK 21.4.7075529 and Build Tools
         run: |
