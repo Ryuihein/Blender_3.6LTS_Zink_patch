@@ -1,4 +1,4 @@
-name: Build Blender Android (With Zink)
+name: Build Blender APK final
 
 on:
   workflow_dispatch:
