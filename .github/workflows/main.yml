@@ -1,4 +1,4 @@
-name: Build Blender 3.6 LTS APK
+name: Build Blender 3.6 LTS APK patch
 
 on:
   workflow_dispatch:
@@ -51,6 +51,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '6.9.4'
+
+      - name: Patch Hardcoded Windows Paths
+        run: |
+          echo "=== Patching Windows D: drive paths to Linux paths ==="
+          WORKSPACE_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch/Blender_3.6LTS_Zink_patch"
+          PARENT_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch"
+          
+          # Replace Windows paths in current repo and sibling repos
+          find . -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
+          find ../Utilities-android_arm64 -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
+
 
       # Step 4: Compile & Build Debug APK
       - name: Build Android APK
