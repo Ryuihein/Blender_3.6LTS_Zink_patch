@@ -54,14 +54,12 @@ jobs:
 
       - name: Patch Hardcoded Windows Paths
         run: |
-          echo "=== Patching Windows D: drive paths to Linux paths ==="
-          WORKSPACE_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch/Blender_3.6LTS_Zink_patch"
+          echo "=== Patching Windows D: drive paths across all repos ==="
           PARENT_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch"
           
-          # Replace Windows paths in current repo and sibling repos
-          find . -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
-          find ../Utilities-android_arm64 -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
-
+          # Replace Windows paths across all subdirectories and properties files
+          find ${PARENT_ROOT} -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
+          
       - name: Build Core Blender Static Libraries
         run: |
           cd ../Utilities-android_arm64/MakeBlender
