@@ -1,4 +1,4 @@
-name: Build Blender 3.6 LTS APK patch
+name: Build Blender 3.6 LTS APK
 
 on:
   workflow_dispatch:
@@ -41,9 +41,10 @@ jobs:
 
       - name: Fix Python Header Directory Mismatch
         run: |
-          echo "=== Mirroring Python header directories for CMake ==="
-          cd ../lib-android_arm64/cpython/include
-          ln -sf . include
+          echo "=== Structuring Python headers for CMake ==="
+          CPYTHON_DIR="/home/runner/work/Blender_3.6LTS_Zink_patch/lib-android_arm64/cpython/include"
+          mkdir -p "${CPYTHON_DIR}/include"
+          cp -r ${CPYTHON_DIR}/*.h "${CPYTHON_DIR}/include/" 2>/dev/null || true
 
       # Step 3: Verify Manually Uploaded Drivers
       - name: Verify Staged Libraries
