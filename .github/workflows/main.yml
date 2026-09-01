@@ -1,4 +1,4 @@
-name: Build Blender APK final
+name: Build Blender APK
 
 on:
   workflow_dispatch:
