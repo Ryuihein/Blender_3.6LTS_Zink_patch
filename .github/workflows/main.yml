@@ -1,4 +1,4 @@
-name: Build Blender 3.6 LTS APK
+name: Build Blender 3.6 LTS aarch64
 
 on:
   workflow_dispatch:
@@ -41,11 +41,26 @@ jobs:
 
       - name: Fix Python Header Directory Mismatch
         run: |
-          echo "=== Structuring Python headers for CMake ==="
-          CPYTHON_DIR="/home/runner/work/Blender_3.6LTS_Zink_patch/lib-android_arm64/cpython/include"
-          mkdir -p "${CPYTHON_DIR}/include"
-          cp -r ${CPYTHON_DIR}/*.h "${CPYTHON_DIR}/include/" 2>/dev/null || true
-
+          echo "=== Dynamically locating and structuring Python headers ==="
+          LIB_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch/lib-android_arm64"
+          TARGET_DIR="${LIB_ROOT}/cpython/include/include"
+          
+          mkdir -p "${TARGET_DIR}"
+          
+          # Find the exact directory containing Python.h inside lib-android_arm64
+          HEADER_DIR=$(find "${LIB_ROOT}" -name "Python.h" -exec dirname {} \; | head -n 1)
+          
+          if [ -z "${HEADER_DIR}" ]; then
+            echo "::error::Python.h was not found anywhere inside lib-android_arm64!"
+            exit 1
+          fi
+          
+          echo "Found Python.h in: ${HEADER_DIR}"
+          cp -r "${HEADER_DIR}"/* "${TARGET_DIR}/"
+          
+          # Verify header presence before starting Gradle
+          ls -la "${TARGET_DIR}/Python.h"
+          
       # Step 3: Verify Manually Uploaded Drivers
       - name: Verify Staged Libraries
         run: |
