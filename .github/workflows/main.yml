@@ -44,13 +44,12 @@ jobs:
         run: |
           echo "=== Staged Drivers in jniLibs ==="
           ls -la OBlender/app/src/main/jniLibs/arm64-v8a/
-
-      # Step 4: Compile & Build Debug APK
-      - name: Build Android APK with Gradle
+          
+     # Step 4: Compile & Build Debug APK
+      - name: Build Android APK with System Gradle
         run: |
           cd OBlender
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          gradle assembleDebug
 
       # Step 5: Save compiled APK as Workflow Artifact
       - name: Upload APK
