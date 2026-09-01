@@ -39,15 +39,22 @@ jobs:
           git clone https://github.com/dshawshank/Utilities-android_arm64.git Utilities-android_arm64
           git clone --branch blender-v3.6-release https://github.com/dshawshank/Blender-android_arm64.git Blender-android_arm64
 
-      # Step 3: Fetch & Stage Mesa Zink Drivers
-      - name: Fetch and Stage Mesa Zink Libraries
-        run: |
-          mkdir -p OBlender/app/src/main/jniLibs/arm64-v8a
-          curl -L -o zink.tar.gz https://github.com/alexworx/mesa-android-builds/releases/download/v23.3.0/mesa-zink-arm64-v8a.tar.gz
-          tar -xzf zink.tar.gz -C OBlender/app/src/main/jniLibs/arm64-v8a/
-          rm zink.tar.gz
-
+      # Step 3: Verify Manually Uploaded Drivers
       - name: Verify Staged Libraries
         run: |
-          echo "=== Staged Zink Libraries ==="
+          echo "=== Staged Drivers in jniLibs ==="
           ls -la OBlender/app/src/main/jniLibs/arm64-v8a/
+
+      # Step 4: Compile & Build Debug APK
+      - name: Build Android APK with Gradle
+        run: |
+          cd OBlender
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      # Step 5: Save compiled APK as Workflow Artifact
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blender-3.6-Zink-ARM64
+          path: OBlender/app/build/outputs/apk/debug/*.apk
