@@ -39,6 +39,12 @@ jobs:
           git clone https://github.com/dshawshank/Utilities-android_arm64.git Utilities-android_arm64
           git clone --branch blender-v3.6-release https://github.com/dshawshank/Blender-android_arm64.git Blender-android_arm64
 
+      - name: Fix Python Header Directory Mismatch
+        run: |
+          echo "=== Mirroring Python header directories for CMake ==="
+          cd ../lib-android_arm64/cpython/include
+          ln -sf . include
+
       # Step 3: Verify Manually Uploaded Drivers
       - name: Verify Staged Libraries
         run: |
