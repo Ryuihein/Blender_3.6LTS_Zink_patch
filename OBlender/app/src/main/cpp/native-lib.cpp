@@ -70,6 +70,12 @@ static int engine_init_display(struct android_app *app) {
     BLI_setenv("HOME",           strHomePath);
     LOGI("路径 %s %s",strConfigPath,strHomePath);
 
+    // === Force Mesa Zink (OpenGL 3.3 Core over Vulkan) ===
+    setenv("GALLIUM_DRIVER", "zink", 1);
+    setenv("MESA_GL_VERSION_OVERRIDE", "3.3", 1);
+    setenv("MESA_GLSL_VERSION_OVERRIDE", "330", 1);
+    setenv("MESA_LOADER_DRIVER_NAME", "zink", 1);
+
 
     char BLENDER_SYSTEM_DATAFILES_Path[256]={0};
     strcat(BLENDER_SYSTEM_DATAFILES_Path,strConfigPath);
