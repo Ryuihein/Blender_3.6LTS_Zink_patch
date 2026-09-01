@@ -62,7 +62,11 @@ jobs:
           find . -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
           find ../Utilities-android_arm64 -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
 
-
+      - name: Build Core Blender Static Libraries
+        run: |
+          cd ../Utilities-android_arm64/MakeBlender
+          gradle assembleRelease
+          
       # Step 4: Compile & Build Debug APK
       - name: Build Android APK
         run: |
