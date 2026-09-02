@@ -1,4 +1,4 @@
-name: Build Blender 3.6 LTS aarch64
+name: Build Blender 3.6 LTS
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Toolchain Setup
+      # Step 1: Toolchain & Environments Setup
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -18,16 +18,29 @@ jobs:
           distribution: 'zulu'
           java-version: '11'
 
-      - name: Download and Install NDK 21.4.7075529 (r21e)
+      # CACHE LAYER: Prevents downloading 1GB NDK on every run
+      - name: Cache Android NDK r21e
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/android-ndk-r21e
+          key: ndk-r21e-linux-x86_64
+
+      - name: Install NDK if not cached
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p $HOME/ndk-download
+          curl -L -o $HOME/ndk-download/ndk.zip https://dl.google.com/android/repository/android-ndk-r21e-linux-x86_64.zip
+          unzip -q $HOME/ndk-download/ndk.zip -d $HOME/
+          rm -rf $HOME/ndk-download
+
+      - name: Configure NDK Environment Path
         run: |
           mkdir -p $ANDROID_HOME/ndk
-          curl -L -o ndk.zip https://dl.google.com/android/repository/android-ndk-r21e-linux-x86_64.zip
-          unzip -q ndk.zip -d $ANDROID_HOME/ndk/
-          mv $ANDROID_HOME/ndk/android-ndk-r21e $ANDROID_HOME/ndk/21.4.7075529
-          rm ndk.zip
+          ln -s $HOME/android-ndk-r21e $ANDROID_HOME/ndk/21.4.7075529
 
-      # Step 2: Build Dependencies & Sibling Repositories
-      - name: Install CMake, Ninja & Build Tools
+      # Step 2: System Dependencies & Repository Sync
+      - name: Install Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build python3 gettext git
@@ -35,73 +48,31 @@ jobs:
       - name: Clone Sibling Repositories
         run: |
           cd ..
-          git clone https://github.com/dshawshank/lib-android_arm64.git lib-android_arm64
-          git clone https://github.com/dshawshank/Utilities-android_arm64.git Utilities-android_arm64
-          git clone --branch blender-v3.6-release https://github.com/dshawshank/Blender-android_arm64.git Blender-android_arm64
+          git clone --depth 1 https://github.com/dshawshank/lib-android_arm64.git lib-android_arm64
+          git clone --depth 1 https://github.com/dshawshank/Utilities-android_arm64.git Utilities-android_arm64
+          git clone --depth 1 --branch blender-v3.6-release https://github.com/dshawshank/Blender-android_arm64.git Blender-android_arm64
 
-      - name: Fix Python Header Directory Mismatch
+      # Step 3: Fast & targeted header configuration
+      - name: Structuring Dependency Headers
         run: |
-          echo "=== Dynamically locating and structuring Python headers ==="
-          LIB_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch/lib-android_arm64"
-          TARGET_DIR="${LIB_ROOT}/cpython/include/include"
+          echo "=== Structuring target CPython & Library Headers ==="
+          LIB_ROOT="${GITHUB_WORKSPACE}/../lib-android_arm64"
           
-          mkdir -p "${TARGET_DIR}"
-          
-          # Find the exact directory containing Python.h inside lib-android_arm64
-          HEADER_DIR=$(find "${LIB_ROOT}" -name "Python.h" -exec dirname {} \; | head -n 1)
-          
-          if [ -z "${HEADER_DIR}" ]; then
-            echo "::error::Python.h was not found anywhere inside lib-android_arm64!"
-            exit 1
-          fi
-          
-          echo "Found Python.h in: ${HEADER_DIR}"
-          cp -r "${HEADER_DIR}"/* "${TARGET_DIR}/"
-          
-          # Verify header presence before starting Gradle
-          ls -la "${TARGET_DIR}/Python.h"
-
-      - name: Deep Fix PNG and Dependency Headers
-        run: |
-          echo "=== Force-syncing all headers into every subfolder ==="
-          LIB_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch/lib-android_arm64"
-          
-          # Target every subdirectory inside Png and ensure pnglibconf.h exists everywhere png.h lives
-          PNG_DIRS=$(find "${LIB_ROOT}/Png" -type d)
-          ALL_PNG_HEADERS=$(find "${LIB_ROOT}/Png" -name "*.h")
-          
-          for dir in $PNG_DIRS; do
-            for header in $ALL_PNG_HEADERS; do
-              cp "$header" "$dir/" 2>/dev/null || true
-            done
-          done
-          
-          # Deep-sync all headers across all subfolders for every third-party library
-          for lib in "${LIB_ROOT}"/*/; do
-            if [ -d "$lib" ]; then
-              LIB_HEADERS=$(find "$lib" -name "*.h")
-              LIB_DIRS=$(find "$lib" -type d)
-              for d in $LIB_DIRS; do
-                for h in $LIB_HEADERS; do
-                  cp "$h" "$d/" 2>/dev/null || true
-                done
-              done
-            fi
-          done
-
-          # Python double-include directory structure
+          # Target clean Python header configuration
           PY_TARGET="${LIB_ROOT}/cpython/include/include"
           mkdir -p "${PY_TARGET}"
-          PY_DIR=$(find "${LIB_ROOT}/cpython" -name "Python.h" -exec dirname {} \; | head -n 1)
-          [ -n "${PY_DIR}" ] && cp -r "${PY_DIR}"/* "${PY_TARGET}/" 2>/dev/null || true
-      # Step 3: Verify Manually Uploaded Drivers
-      - name: Verify Staged Libraries
-        run: |
-          echo "=== Staged Drivers in jniLibs ==="
-          ls -la OBlender/app/src/main/jniLibs/arm64-v8a/
-          
-     
-      # Step 3.5: Force Compatible Gradle Version
+          PY_DIR=$(dirname $(find "${LIB_ROOT}/cpython" -name "Python.h" | head -n 1))
+          if [ -n "${PY_DIR}" ]; then
+            cp -r "${PY_DIR}"/* "${PY_TARGET}/" 2>/dev/null || true
+          fi
+
+          # Target exact directory where png.h lives so pnglibconf.h is found
+          PNG_TARGET=$(dirname $(find "${LIB_ROOT}/Png" -name "png.h" | head -n 1))
+          if [ -n "${PNG_TARGET}" ]; then
+            echo "Copying PNG headers into target directory: ${PNG_TARGET}"
+            find "${LIB_ROOT}/Png" -name "*.h" -exec cp {} "${PNG_TARGET}/" 2>/dev/null \; || true
+          fi
+
       - name: Setup Gradle 6.9.4
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -109,24 +80,22 @@ jobs:
 
       - name: Patch Hardcoded Windows Paths
         run: |
-          echo "=== Patching Windows D: drive paths across all repos ==="
-          PARENT_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch"
-          
-          # Replace Windows paths across all subdirectories and properties files
-          find ${PARENT_ROOT} -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
-          
+          echo "=== Patching Windows paths dynamically ==="
+          PARENT_ROOT="${GITHUB_WORKSPACE}/.."
+          find "${PARENT_ROOT}" -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
+
+      # Step 4: Compilations
       - name: Build Core Blender Static Libraries
         run: |
           cd ../Utilities-android_arm64/MakeBlender
           gradle assembleRelease
           
-      # Step 4: Compile & Build Debug APK
       - name: Build Android APK
         run: |
           cd OBlender
           gradle assembleDebug
 
-      # Step 5: Save compiled APK as Workflow Artifact
+      # Step 5: Artifact Export
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
