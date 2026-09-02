@@ -60,6 +60,45 @@ jobs:
           
           # Verify header presence before starting Gradle
           ls -la "${TARGET_DIR}/Python.h"
+
+      - name: Fix PNG Header Directory Structure
+        run: |
+          echo "=== Synchronizing PNG headers across include paths ==="
+          PNG_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch/lib-android_arm64/Png"
+          
+          # Find all directories containing pnglibconf.h and png.h
+          PNG_H_DIR=$(find "${PNG_ROOT}" -name "png.h" -exec dirname {} \; | head -n 1)
+          CONF_DIR=$(find "${PNG_ROOT}" -name "pnglibconf.h" -exec dirname {} \; | head -n 1)
+          
+          if [ -n "${CONF_DIR}" ] && [ -n "${PNG_H_DIR}" ]; then
+            echo "Copying ${CONF_DIR} headers to ${PNG_H_DIR}"
+            cp -r "${CONF_DIR}"/*.h "${PNG_H_DIR}/" 2>/dev/null || true
+            
+            # Ensure top-level include directory also holds all png headers
+            mkdir -p "${PNG_ROOT}/include"
+            cp -r "${CONF_DIR}"/*.h "${PNG_ROOT}/include/" 2>/dev/null || true
+          fi
+
+      - name: Flatten All Dependency Headers
+        run: |
+          echo "=== Auto-consolidating header files in lib-android_arm64 ==="
+          LIB_ROOT="/home/runner/work/Blender_3.6LTS_Zink_patch/lib-android_arm64"
+          
+          # Iterate over all library subdirectories
+          for dir in "${LIB_ROOT}"/*/; do
+            if [ -d "$dir" ]; then
+              # Create a unified include directory if missing
+              mkdir -p "${dir}include"
+              # Find all headers in subfolders and mirror them into the library's include directory
+              find "${dir}" -name "*.h" -exec cp {} "${dir}include/" 2>/dev/null \; || true
+            fi
+          done
+          
+          # Fix specific Python double-include path expectation
+          PY_TARGET="${LIB_ROOT}/cpython/include/include"
+          mkdir -p "${PY_TARGET}"
+          PY_DIR=$(find "${LIB_ROOT}/cpython" -name "Python.h" -exec dirname {} \; | head -n 1)
+          [ -n "${PY_DIR}" ] && cp -r "${PY_DIR}"/* "${PY_TARGET}/" 2>/dev/null || true
           
       # Step 3: Verify Manually Uploaded Drivers
       - name: Verify Staged Libraries
