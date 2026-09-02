@@ -52,25 +52,31 @@ jobs:
           git clone --depth 1 https://github.com/dshawshank/Utilities-android_arm64.git Utilities-android_arm64
           git clone --depth 1 --branch blender-v3.6-release https://github.com/dshawshank/Blender-android_arm64.git Blender-android_arm64
 
-      # Step 3: Fast & targeted header configuration
+      # Step 3: Fixed Target Header Configurations
       - name: Structuring Dependency Headers
         run: |
           echo "=== Structuring target CPython & Library Headers ==="
-          LIB_ROOT="${GITHUB_WORKSPACE}/../lib-android_arm64"
+          LIB_ROOT="${GITHUB_WORKSPACE}/.."
+          LIB_ANDROID="${LIB_ROOT}/lib-android_arm64"
           
-          # Target clean Python header configuration
-          PY_TARGET="${LIB_ROOT}/cpython/include/include"
+          # Flatten Python headers into cpython/include
+          PY_TARGET="${LIB_ANDROID}/cpython/include"
           mkdir -p "${PY_TARGET}"
-          PY_DIR=$(dirname $(find "${LIB_ROOT}/cpython" -name "Python.h" | head -n 1))
-          if [ -n "${PY_DIR}" ]; then
+          PY_DIR=$(dirname $(find "${LIB_ANDROID}/cpython" -name "Python.h" | head -n 1))
+          
+          if [ -n "${PY_DIR}" ] && [ "${PY_DIR}" != "${PY_TARGET}" ]; then
+            echo "Copying Python headers from ${PY_DIR} to ${PY_TARGET}"
             cp -r "${PY_DIR}"/* "${PY_TARGET}/" 2>/dev/null || true
           fi
 
-          # Target exact directory where png.h lives so pnglibconf.h is found
-          PNG_TARGET=$(dirname $(find "${LIB_ROOT}/Png" -name "png.h" | head -n 1))
+          # Resolve prebuilt PNG config if present
+          find "${LIB_ANDROID}/Png" -name "pnglibconf.h.prebuilt" -execdir cp -n {} pnglibconf.h \; 2>/dev/null || true
+
+          # Target exact directory where png.h lives and flood all PNG headers into it
+          PNG_TARGET=$(dirname $(find "${LIB_ANDROID}/Png" -name "png.h" | head -n 1))
           if [ -n "${PNG_TARGET}" ]; then
-            echo "Copying PNG headers into target directory: ${PNG_TARGET}"
-            find "${LIB_ROOT}/Png" -name "*.h" -exec cp {} "${PNG_TARGET}/" 2>/dev/null \; || true
+            echo "Syncing PNG headers into target directory: ${PNG_TARGET}"
+            find "${LIB_ANDROID}/Png" -name "*.h" -exec cp -n {} "${PNG_TARGET}/" 2>/dev/null \; || true
           fi
 
       - name: Setup Gradle 6.9.4
@@ -81,18 +87,25 @@ jobs:
       - name: Patch Hardcoded Windows Paths
         run: |
           echo "=== Patching Windows paths dynamically ==="
-          PARENT_ROOT="${GITHUB_WORKSPACE}/.."
+          PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
+          echo "Target Parent Root resolved to: ${PARENT_ROOT}"
+          
+          # Replace Windows D: drive paths with actual GitHub workspace parent path
           find "${PARENT_ROOT}" -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
 
       # Step 4: Compilations
       - name: Build Core Blender Static Libraries
         run: |
-          cd ../Utilities-android_arm64/MakeBlender
+          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeBlender"
           gradle assembleRelease
           
       - name: Build Android APK
         run: |
-          cd OBlender
+          if [ -d "${GITHUB_WORKSPACE}/OBlender" ]; then
+            cd "${GITHUB_WORKSPACE}/OBlender"
+          elif [ -d "${GITHUB_WORKSPACE}/../Utilities-android_arm64/OBlender" ]; then
+            cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/OBlender"
+          fi
           gradle assembleDebug
 
       # Step 5: Artifact Export
@@ -100,4 +113,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Blender-3.6-Zink-ARM64
-          path: OBlender/app/build/outputs/apk/debug/*.apk
+          path: |
+            ${{ github.workspace }}/**/*.apk
+            ${{ github.workspace }}/../**/*.apk
