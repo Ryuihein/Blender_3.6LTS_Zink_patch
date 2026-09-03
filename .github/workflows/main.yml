@@ -98,6 +98,18 @@ jobs:
           
           find "${PARENT_ROOT}" -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
 
+      - name: Generate DNA and RNA Configuration Headers
+        run: |
+          echo "=== Step A: Generating DNA Headers ==="
+          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeSDNA"
+          gradle assembleRelease
+          # Note: If this directory contains a script or local binary build, execute it here.
+          
+          echo "=== Step B: Generating RNA Headers ==="
+          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeSRNA"
+          gradle assembleRelease
+          # This step outputs the missing "RNA_blender_cpp.h" file natively into the source paths.    
+
       # Step 4: Compilations
       - name: Build Core Blender Static Libraries
         run: |
