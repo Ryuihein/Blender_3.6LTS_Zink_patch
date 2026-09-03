@@ -8,7 +8,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Toolchain & Environments Setup
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -18,7 +17,12 @@ jobs:
           distribution: 'zulu'
           java-version: '11'
 
-      # CACHE LAYER: Prevents downloading 1GB NDK on every run
+      # Enable ARM64 Execution Emulation via QEMU
+      - name: Set up QEMU for ARM64 Execution
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support
+
       - name: Cache Android NDK r21e
         id: cache-ndk
         uses: actions/cache@v4
@@ -39,28 +43,25 @@ jobs:
           mkdir -p $ANDROID_HOME/ndk
           ln -s $HOME/android-ndk-r21e $ANDROID_HOME/ndk/21.4.7075529
 
-      # Step 2: System Dependencies & Repository Sync
       - name: Install Build Tools
         run: |
-          sudo apt-get update
           sudo apt-get install -y cmake ninja-build python3 gettext git
 
-      - name: Clone Sibling Repositories
+      - name: Clone All Sibling Repositories
         run: |
           cd ..
           git clone --depth 1 https://github.com/dshawshank/lib-android_arm64.git lib-android_arm64
           git clone --depth 1 https://github.com/dshawshank/Utilities-android_arm64.git Utilities-android_arm64
           git clone --depth 1 --branch blender-v3.6-release https://github.com/dshawshank/Blender-android_arm64.git Blender-android_arm64
+          git clone --depth 1 https://github.com/dshawshank/APP-android_arm64.git APP-android_arm64
 
-      # Step 3: Fixed Target Header Configurations
       - name: Structuring Dependency Headers
         run: |
-          echo "=== Structuring target CPython, PNG & RNA Headers ==="
           LIB_ROOT="${GITHUB_WORKSPACE}/.."
           LIB_ANDROID="${LIB_ROOT}/lib-android_arm64"
           BLENDER_ROOT="${LIB_ROOT}/Blender-android_arm64"
           
-          # 1. CPython Dual Include Mirroring
+          # CPython Header Sync
           PY_SRC_DIR=$(dirname $(find "${LIB_ANDROID}/cpython" -name "Python.h" | head -n 1))
           if [ -n "${PY_SRC_DIR}" ]; then
             mkdir -p "${LIB_ANDROID}/cpython/include/include"
@@ -68,21 +69,11 @@ jobs:
             cp -r "${PY_SRC_DIR}"/* "${LIB_ANDROID}/cpython/include/include/" 2>/dev/null || true
           fi
 
-          # 2. PNG Header Sync
+          # PNG Header Sync
           find "${LIB_ANDROID}/Png" -name "pnglibconf.h.prebuilt" -execdir cp -n {} pnglibconf.h \; 2>/dev/null || true
           PNG_TARGET=$(dirname $(find "${LIB_ANDROID}/Png" -name "png.h" | head -n 1))
           if [ -n "${PNG_TARGET}" ]; then
             find "${LIB_ANDROID}/Png" -name "*.h" -exec cp -n {} "${PNG_TARGET}/" 2>/dev/null \; || true
-          fi
-
-          # 3. Copy Pre-generated RNA Headers to Cycles
-          RNA_HEADER=$(find "${LIB_ROOT}" -name "RNA_blender_cpp.h" | head -n 1)
-          if [ -n "${RNA_HEADER}" ]; then
-            RNA_DIR=$(dirname "${RNA_HEADER}")
-            CYCLES_TARGET="${BLENDER_ROOT}/intern/cycles/blender"
-            echo "Copying RNA headers from ${RNA_DIR} to ${CYCLES_TARGET}"
-            mkdir -p "${CYCLES_TARGET}"
-            cp "${RNA_DIR}"/RNA_*.h "${CYCLES_TARGET}/" 2>/dev/null || true
           fi
 
       - name: Setup Gradle 6.9.4
@@ -92,61 +83,68 @@ jobs:
 
       - name: Patch Hardcoded Windows Paths
         run: |
-          echo "=== Patching Windows paths dynamically ==="
           PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
-          echo "Target Parent Root resolved to: ${PARENT_ROOT}"
-          
-          find "${PARENT_ROOT}" -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
-      
-      # Step 4: Multi-Stage Bootstrap Compilations
+          # Replace both forward slash and backslash Windows path patterns
+          find "${PARENT_ROOT}" -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) \
+            -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g; s|D:\\\\FreeProjects\\\\Blender\\\\Blender|${PARENT_ROOT}|g" {} +
+
       - name: Multi-Stage Bootstrap Build
         run: |
+          PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
+          MAKEBLENDER_CXX="${PARENT_ROOT}/Utilities-android_arm64/MakeBlender/app/.cxx/cmake/release/arm64-v8a"
+
           echo "=== STAGE 1: Generating CMake Config for MakeBlender ==="
-          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeBlender"
+          cd "${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
           gradle :app:generateJsonModelRelease || true
 
-          echo "=== STAGE 2: Building makesdna and makesrna Libraries ==="
-          MAKEBLENDER_CXX="${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeBlender/app/.cxx/cmake/release/arm64-v8a"
+          echo "=== STAGE 2: Building libmakesdna.a ==="
           if [ -d "${MAKEBLENDER_CXX}" ]; then
-            ninja -C "${MAKEBLENDER_CXX}" makesdna makesrna || true
+            ninja -C "${MAKEBLENDER_CXX}" makesdna || true
           fi
 
-          echo "=== STAGE 3: Generating DNA Headers via MakeSDNA ==="
-          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeSDNA"
+          echo "=== STAGE 3: Running MakeSDNA & Copying DNA Files ==="
+          cd "${PARENT_ROOT}/Utilities-android_arm64/MakeSDNA"
+          gradle assembleRelease
+          
+          # Copy generated DNA C/Header files back into MakeBlender tree
+          SDNA_TARGET="${MAKEBLENDER_CXX}/source/blender/makesdna/intern"
+          mkdir -p "${SDNA_TARGET}"
+          find "${PARENT_ROOT}" -name "dna.c" -exec cp {} "${SDNA_TARGET}/" \; 2>/dev/null || true
+          find "${PARENT_ROOT}" -name "dna_type_offsets.h" -exec cp {} "${SDNA_TARGET}/" \; 2>/dev/null || true
+          find "${PARENT_ROOT}" -name "dna_verify.c" -exec cp {} "${SDNA_TARGET}/" \; 2>/dev/null || true
+
+          echo "=== STAGE 4: Building libmakesrna.a ==="
+          if [ -d "${MAKEBLENDER_CXX}" ]; then
+            ninja -C "${MAKEBLENDER_CXX}" makesrna || true
+          fi
+
+          echo "=== STAGE 5: Running MakeSRNA & Copying RNA Files ==="
+          cd "${PARENT_ROOT}/Utilities-android_arm64/MakeSRNA"
           gradle assembleRelease
 
-          echo "=== STAGE 4: Generating RNA Headers via MakeSRNA ==="
-          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeSRNA"
-          gradle assembleRelease
-
-          echo "=== STAGE 5: Syncing Generated RNA Headers to Cycles ==="
-          PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
-          RNA_FOUND=$(find "${PARENT_ROOT}" -name "RNA_blender_cpp.h")
-          for header in $RNA_FOUND; do
-            hdr_dir=$(dirname "$header")
-            echo "Found RNA headers in ${hdr_dir}, copying to Cycles..."
-            cp -r "${hdr_dir}"/RNA_*.h "${PARENT_ROOT}/Blender-android_arm64/intern/cycles/blender/" 2>/dev/null || true
-          done
+          RNA_TARGET_INTERN="${MAKEBLENDER_CXX}/source/blender/makesrna/intern"
+          RNA_TARGET_CYCLES="${PARENT_ROOT}/Blender-android_arm64/intern/cycles/blender"
+          RNA_TARGET_SOURCE="${PARENT_ROOT}/Blender-android_arm64/source/blender/makesrna"
+          
+          mkdir -p "${RNA_TARGET_INTERN}" "${RNA_TARGET_CYCLES}" "${RNA_TARGET_SOURCE}"
+          
+          find "${PARENT_ROOT}" -name "RNA_*.h" -exec cp {} "${RNA_TARGET_CYCLES}/" \; 2>/dev/null || true
+          find "${PARENT_ROOT}" -name "RNA_*.h" -exec cp {} "${RNA_TARGET_SOURCE}/" \; 2>/dev/null || true
+          find "${PARENT_ROOT}" -name "*.c" -path "*/makesrna/*" -exec cp {} "${RNA_TARGET_INTERN}/" \; 2>/dev/null || true
 
           echo "=== STAGE 6: Full Core Blender Compilation ==="
-          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeBlender"
+          cd "${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
           gradle assembleRelease
-    
-      
-      - name: Build Android APK
+
+      - name: Build Android APK (OBlender)
         run: |
-          if [ -d "${GITHUB_WORKSPACE}/OBlender" ]; then
-            cd "${GITHUB_WORKSPACE}/OBlender"
-          elif [ -d "${GITHUB_WORKSPACE}/../Utilities-android_arm64/OBlender" ]; then
-            cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/OBlender"
-          fi
+          PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
+          cd "${PARENT_ROOT}/APP-android_arm64/OBlender"
           gradle assembleDebug
 
-      # Step 5: Artifact Export
-      - name: Upload APK
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Blender-3.6-Zink-ARM64
           path: |
-            ${{ github.workspace }}/**/*.apk
             ${{ github.workspace }}/../**/*.apk
