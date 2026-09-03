@@ -92,7 +92,6 @@ jobs:
         run: |
           PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
           MAKEBLENDER_CXX="${PARENT_ROOT}/Utilities-android_arm64/MakeBlender/app/.cxx/cmake/release/arm64-v8a"
-          BLENDER_SRC="${PARENT_ROOT}/Blender-android_arm64/source/blender/makesdna"
 
           echo "=== STAGE 1: Generating CMake Config for MakeBlender ==="
           cd "${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
@@ -141,16 +140,20 @@ jobs:
           echo "=== STAGE 6: Full Core Blender Compilation ==="
           cd "${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
           gradle assembleRelease
-          
+
       - name: Build Android APK (OBlender)
         run: |
           PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
           cd "${PARENT_ROOT}/APP-android_arm64/OBlender"
           gradle assembleDebug
 
+      - name: Collect APK Artifacts
+        run: |
+          mkdir -p ${{ github.workspace }}/output
+          find ${{ github.workspace }}/.. -name "*.apk" -exec cp {} ${{ github.workspace }}/output/ \;
+
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Blender-3.6-Zink-ARM64
-          path: |
-            ${{ github.workspace }}/../**/*.apk
+          path: ${{ github.workspace }}/output/*.apk
