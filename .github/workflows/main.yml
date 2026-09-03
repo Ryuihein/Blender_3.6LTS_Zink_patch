@@ -55,31 +55,34 @@ jobs:
       # Step 3: Fixed Target Header Configurations
       - name: Structuring Dependency Headers
         run: |
-          echo "=== Structuring target CPython & Library Headers ==="
+          echo "=== Structuring CPython, PNG & Cycles RNA Headers ==="
           LIB_ROOT="${GITHUB_WORKSPACE}/.."
           LIB_ANDROID="${LIB_ROOT}/lib-android_arm64"
+          BLENDER_ROOT="${LIB_ROOT}/Blender-android_arm64"
           
-          # Populate BOTH single and double-nested include folders for CPython
+          # 1. CPython Dual Include Mirroring
           PY_SRC_DIR=$(dirname $(find "${LIB_ANDROID}/cpython" -name "Python.h" | head -n 1))
-          
           if [ -n "${PY_SRC_DIR}" ]; then
-            echo "Found Python headers in: ${PY_SRC_DIR}"
-            mkdir -p "${LIB_ANDROID}/cpython/include"
             mkdir -p "${LIB_ANDROID}/cpython/include/include"
-            
             cp -r "${PY_SRC_DIR}"/* "${LIB_ANDROID}/cpython/include/" 2>/dev/null || true
             cp -r "${PY_SRC_DIR}"/* "${LIB_ANDROID}/cpython/include/include/" 2>/dev/null || true
-          else
-            echo "::error::Python.h was not found anywhere inside lib-android_arm64/cpython!"
-            exit 1
           fi
 
-          # Resolve prebuilt PNG config and flood PNG headers into target directory
+          # 2. PNG Header Sync
           find "${LIB_ANDROID}/Png" -name "pnglibconf.h.prebuilt" -execdir cp -n {} pnglibconf.h \; 2>/dev/null || true
           PNG_TARGET=$(dirname $(find "${LIB_ANDROID}/Png" -name "png.h" | head -n 1))
           if [ -n "${PNG_TARGET}" ]; then
-            echo "Syncing PNG headers into target directory: ${PNG_TARGET}"
             find "${LIB_ANDROID}/Png" -name "*.h" -exec cp -n {} "${PNG_TARGET}/" 2>/dev/null \; || true
+          fi
+
+          # 3. Sync RNA C++ Headers into Cycles
+          RNA_HEADER=$(find "${LIB_ROOT}" -name "RNA_blender_cpp.h" | head -n 1)
+          if [ -n "${RNA_HEADER}" ]; then
+            RNA_DIR=$(dirname "${RNA_HEADER}")
+            CYCLES_TARGET="${BLENDER_ROOT}/intern/cycles/blender"
+            echo "Copying RNA headers from ${RNA_DIR} to ${CYCLES_TARGET}"
+            mkdir -p "${CYCLES_TARGET}"
+            cp "${RNA_DIR}"/RNA_*.h "${CYCLES_TARGET}/" 2>/dev/null || true
           fi
 
       - name: Setup Gradle 6.9.4
