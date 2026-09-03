@@ -92,6 +92,7 @@ jobs:
         run: |
           PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
           MAKEBLENDER_CXX="${PARENT_ROOT}/Utilities-android_arm64/MakeBlender/app/.cxx/cmake/release/arm64-v8a"
+          BLENDER_SRC="${PARENT_ROOT}/Blender-android_arm64/source/blender/makesdna"
 
           echo "=== STAGE 1: Generating CMake Config for MakeBlender ==="
           cd "${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
@@ -102,20 +103,25 @@ jobs:
             ninja -C "${MAKEBLENDER_CXX}" makesdna || true
           fi
 
-          echo "=== STAGE 3: Running MakeSDNA & Copying DNA Files ==="
+          echo "=== STAGE 3: Running MakeSDNA & Syncing DNA Headers ==="
           cd "${PARENT_ROOT}/Utilities-android_arm64/MakeSDNA"
           gradle assembleRelease
           
-          # Copy generated DNA C/Header files back into MakeBlender tree
-          SDNA_TARGET="${MAKEBLENDER_CXX}/source/blender/makesdna/intern"
-          mkdir -p "${SDNA_TARGET}"
-          find "${PARENT_ROOT}" -name "dna.c" -exec cp {} "${SDNA_TARGET}/" \; 2>/dev/null || true
-          find "${PARENT_ROOT}" -name "dna_type_offsets.h" -exec cp {} "${SDNA_TARGET}/" \; 2>/dev/null || true
-          find "${PARENT_ROOT}" -name "dna_verify.c" -exec cp {} "${SDNA_TARGET}/" \; 2>/dev/null || true
+          # Copy generated DNA C/Header files into BOTH the build target and source tree
+          SDNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesdna/intern"
+          SDNA_TARGET_SRC_INTERN="${PARENT_ROOT}/Blender-android_arm64/source/blender/makesdna/intern"
+          SDNA_TARGET_SRC_ROOT="${PARENT_ROOT}/Blender-android_arm64/source/blender/makesdna"
 
-          echo "=== STAGE 4: Building libmakesrna.a ==="
+          mkdir -p "${SDNA_TARGET_CXX}" "${SDNA_TARGET_SRC_INTERN}" "${SDNA_TARGET_SRC_ROOT}"
+          
+          find "${PARENT_ROOT}" -name "dna.c" -exec cp {} "${SDNA_TARGET_CXX}/" \; -exec cp {} "${SDNA_TARGET_SRC_INTERN}/" \; 2>/dev/null || true
+          find "${PARENT_ROOT}" -name "dna_type_offsets.h" -exec cp {} "${SDNA_TARGET_CXX}/" \; -exec cp {} "${SDNA_TARGET_SRC_INTERN}/" \; -exec cp {} "${SDNA_TARGET_SRC_ROOT}/" \; 2>/dev/null || true
+          find "${PARENT_ROOT}" -name "dna_verify.c" -exec cp {} "${SDNA_TARGET_CXX}/" \; -exec cp {} "${SDNA_TARGET_SRC_INTERN}/" \; 2>/dev/null || true
+
+          echo "=== STAGE 4: Building libmakesrna.a and Prerequisites ==="
           if [ -d "${MAKEBLENDER_CXX}" ]; then
-            ninja -C "${MAKEBLENDER_CXX}" makesrna || true
+            # Build makesrna AND ghost library needed by MakeSRNA
+            ninja -C "${MAKEBLENDER_CXX}" makesrna bf_intern_ghost || true
           fi
 
           echo "=== STAGE 5: Running MakeSRNA & Copying RNA Files ==="
@@ -135,7 +141,7 @@ jobs:
           echo "=== STAGE 6: Full Core Blender Compilation ==="
           cd "${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
           gradle assembleRelease
-
+          
       - name: Build Android APK (OBlender)
         run: |
           PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
