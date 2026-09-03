@@ -91,54 +91,59 @@ jobs:
       - name: Multi-Stage Bootstrap Build
         run: |
           PARENT_ROOT=$(cd "${GITHUB_WORKSPACE}/.." && pwd)
-          MAKEBLENDER_CXX="${PARENT_ROOT}/Utilities-android_arm64/MakeBlender/app/.cxx/cmake/release/arm64-v8a"
-
-          echo "=== STAGE 1: Generating CMake Config for MakeBlender ==="
-          cd "${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
-          gradle :app:generateJsonModelRelease || true
-
-          echo "=== STAGE 2: Building libmakesdna.a ==="
-          if [ -d "${MAKEBLENDER_CXX}" ]; then
-            ninja -C "${MAKEBLENDER_CXX}" makesdna || true
-          fi
-
-          echo "=== STAGE 3: Running MakeSDNA & Syncing DNA Headers ==="
-          cd "${PARENT_ROOT}/Utilities-android_arm64/MakeSDNA"
-          gradle assembleRelease
+          BLENDER_SRC="${PARENT_ROOT}/Blender-android_arm64"
+          MAKEBLENDER_DIR="${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
+          MAKEBLENDER_CXX="${MAKEBLENDER_DIR}/app/.cxx/cmake/release/arm64-v8a"
           
-          # Copy generated DNA C/Header files into BOTH the build target and source tree
+          # Define system environment maps for QEMU to resolve Android Bionic C Libraries
+          export QEMU_LD_PREFIX="${ANDROID_HOME}/ndk/21.4.7075529/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+
+          echo "=== STAGE 1: First-Pass Compilation (Building libmakesdna.a) ==="
+          cd "${MAKEBLENDER_DIR}"
+          gradle :app:generateJsonModelRelease
+          # Explicitly invoke Ninja to build only the code-generator binaries we need right now
+          ninja -C "${MAKEBLENDER_CXX}" makesdna source/creator/msgfmt source/creator/datatoc
+
+          echo "=== STAGE 2: Replicating MakeSDNA via QEMU ==="
+          # Establish target directories inside the Android CXX build stream
           SDNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesdna/intern"
-          SDNA_TARGET_SRC_INTERN="${PARENT_ROOT}/Blender-android_arm64/source/blender/makesdna/intern"
-          SDNA_TARGET_SRC_ROOT="${PARENT_ROOT}/Blender-android_arm64/source/blender/makesdna"
-
-          mkdir -p "${SDNA_TARGET_CXX}" "${SDNA_TARGET_SRC_INTERN}" "${SDNA_TARGET_SRC_ROOT}"
+          mkdir -p "${SDNA_TARGET_CXX}"
           
-          find "${PARENT_ROOT}" -name "dna.c" -exec cp {} "${SDNA_TARGET_CXX}/" \; -exec cp {} "${SDNA_TARGET_SRC_INTERN}/" \; 2>/dev/null || true
-          find "${PARENT_ROOT}" -name "dna_type_offsets.h" -exec cp {} "${SDNA_TARGET_CXX}/" \; -exec cp {} "${SDNA_TARGET_SRC_INTERN}/" \; -exec cp {} "${SDNA_TARGET_SRC_ROOT}/" \; 2>/dev/null || true
-          find "${PARENT_ROOT}" -name "dna_verify.c" -exec cp {} "${SDNA_TARGET_CXX}/" \; -exec cp {} "${SDNA_TARGET_SRC_INTERN}/" \; 2>/dev/null || true
+          # Emulate and execute the ARM64 Android makesdna binary directly on the Ubuntu runner
+          qemu-aarch64-static "${MAKEBLENDER_CXX}/bin/makesdna" \
+            "${BLENDER_SRC}/source/blender/makesdna/DNA_struct_list.h" \
+            "${SDNA_TARGET_CXX}/dna.c" \
+            "${SDNA_TARGET_CXX}/dna_type_offsets.h" \
+            "${SDNA_TARGET_CXX}/dna_verify.c" \
+            "${BLENDER_SRC}/source/blender/makesdna/"
 
-          echo "=== STAGE 4: Building libmakesrna.a and Prerequisites ==="
-          if [ -d "${MAKEBLENDER_CXX}" ]; then
-            # Build makesrna AND ghost library needed by MakeSRNA
-            ninja -C "${MAKEBLENDER_CXX}" makesrna bf_intern_ghost || true
-          fi
+          # Process the text replacements required by Step 9 in the documentation
+          sed -i "s|/data/data/com.epai.makesdna/makesdna|${BLENDER_SRC}/source/blender/makesdna|g" "${SDNA_TARGET_CXX}/dna_verify.c"
 
-          echo "=== STAGE 5: Running MakeSRNA & Copying RNA Files ==="
-          cd "${PARENT_ROOT}/Utilities-android_arm64/MakeSRNA"
-          gradle assembleRelease
+          # Synchronize auxiliary binaries (Step 8)
+          mkdir -p "${MAKEBLENDER_CXX}/bin"
+          cp "${MAKEBLENDER_CXX}/bin/msgfmt" "${MAKEBLENDER_CXX}/source/creator/" || true
+          cp "${MAKEBLENDER_CXX}/bin/datatoc" "${MAKEBLENDER_CXX}/source/creator/" || true
 
-          RNA_TARGET_INTERN="${MAKEBLENDER_CXX}/source/blender/makesrna/intern"
-          RNA_TARGET_CYCLES="${PARENT_ROOT}/Blender-android_arm64/intern/cycles/blender"
-          RNA_TARGET_SOURCE="${PARENT_ROOT}/Blender-android_arm64/source/blender/makesrna"
-          
-          mkdir -p "${RNA_TARGET_INTERN}" "${RNA_TARGET_CYCLES}" "${RNA_TARGET_SOURCE}"
-          
-          find "${PARENT_ROOT}" -name "RNA_*.h" -exec cp {} "${RNA_TARGET_CYCLES}/" \; 2>/dev/null || true
-          find "${PARENT_ROOT}" -name "RNA_*.h" -exec cp {} "${RNA_TARGET_SOURCE}/" \; 2>/dev/null || true
-          find "${PARENT_ROOT}" -name "*.c" -path "*/makesrna/*" -exec cp {} "${RNA_TARGET_INTERN}/" \; 2>/dev/null || true
+          echo "=== STAGE 3: Second-Pass Compilation (Building libmakesrna.a) ==="
+          # Re-trigger to consume the freshly generated DNA structures
+          ninja -C "${MAKEBLENDER_CXX}" makesrna bf_intern_ghost
 
-          echo "=== STAGE 6: Full Core Blender Compilation ==="
-          cd "${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
+          echo "=== STAGE 4: Replicating MakeSRNA via QEMU ==="
+          RNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesrna/intern"
+          RNA_TARGET_SOURCE="${BLENDER_SRC}/source/blender/makesrna"
+          mkdir -p "${RNA_TARGET_CXX}" "${RNA_TARGET_SOURCE}"
+
+          # Emulate the SRNA code generation binary
+          qemu-aarch64-static "${MAKEBLENDER_CXX}/bin/makesrna" \
+            "${RNA_TARGET_CXX}/" \
+            "${MAKEBLENDER_CXX}/source/blender/makesrna/"
+
+          # Distribute the headers exactly where Blender's build tools expect them (Steps 16 & 17)
+          find "${RNA_TARGET_CXX}" -name "RNA_*.h" -exec cp -n {} "${RNA_TARGET_SOURCE}/" \; 2>/dev/null || true
+
+          echo "=== STAGE 5: Third-Pass Compilation (Full Blender Core Build) ==="
+          # Execute the final compilation pass to tie all structural code segments together
           gradle assembleRelease
 
       - name: Build Android APK (OBlender)
