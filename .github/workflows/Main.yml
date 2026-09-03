@@ -1,4 +1,4 @@
-name: Build Blender 3.6 LTS
+name: Build Blender 3.6 LTS apk
 
 on:
   workflow_dispatch:
