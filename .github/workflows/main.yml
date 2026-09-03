@@ -55,7 +55,7 @@ jobs:
       # Step 3: Fixed Target Header Configurations
       - name: Structuring Dependency Headers
         run: |
-          echo "=== Structuring CPython, PNG & Cycles RNA Headers ==="
+          echo "=== Structuring target CPython, PNG & RNA Headers ==="
           LIB_ROOT="${GITHUB_WORKSPACE}/.."
           LIB_ANDROID="${LIB_ROOT}/lib-android_arm64"
           BLENDER_ROOT="${LIB_ROOT}/Blender-android_arm64"
@@ -75,7 +75,7 @@ jobs:
             find "${LIB_ANDROID}/Png" -name "*.h" -exec cp -n {} "${PNG_TARGET}/" 2>/dev/null \; || true
           fi
 
-          # 3. Sync RNA C++ Headers into Cycles
+          # 3. Copy Pre-generated RNA Headers to Cycles
           RNA_HEADER=$(find "${LIB_ROOT}" -name "RNA_blender_cpp.h" | head -n 1)
           if [ -n "${RNA_HEADER}" ]; then
             RNA_DIR=$(dirname "${RNA_HEADER}")
@@ -97,18 +97,6 @@ jobs:
           echo "Target Parent Root resolved to: ${PARENT_ROOT}"
           
           find "${PARENT_ROOT}" -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) -exec sed -i "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" {} +
-
-      - name: Generate DNA and RNA Configuration Headers
-        run: |
-          echo "=== Step A: Generating DNA Headers ==="
-          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeSDNA"
-          gradle assembleRelease
-          # Note: If this directory contains a script or local binary build, execute it here.
-          
-          echo "=== Step B: Generating RNA Headers ==="
-          cd "${GITHUB_WORKSPACE}/../Utilities-android_arm64/MakeSRNA"
-          gradle assembleRelease
-          # This step outputs the missing "RNA_blender_cpp.h" file natively into the source paths.    
 
       # Step 4: Compilations
       - name: Build Core Blender Static Libraries
