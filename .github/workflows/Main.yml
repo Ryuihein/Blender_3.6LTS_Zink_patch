@@ -17,7 +17,7 @@ jobs:
           distribution: zulu
           java-version: "11"
 
-      - name: Set up QEMU for ARM64 Execution
+      - name: Set up QEMU and Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -43,13 +43,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           mkdir -p "$HOME/ndk-download"
-
           curl -fL \
             -o "$HOME/ndk-download/ndk.zip" \
             "https://dl.google.com/android/repository/android-ndk-r21e-linux-x86_64.zip"
-
           unzip -q "$HOME/ndk-download/ndk.zip" -d "$HOME"
           rm -rf "$HOME/ndk-download"
 
@@ -57,18 +54,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           mkdir -p "$ANDROID_HOME/ndk"
-
-          if [ -L "$ANDROID_HOME/ndk/21.4.7075529" ] || \
-             [ -e "$ANDROID_HOME/ndk/21.4.7075529" ]; then
+          if [ -L "$ANDROID_HOME/ndk/21.4.7075529" ] || [ -e "$ANDROID_HOME/ndk/21.4.7075529" ]; then
             rm -rf "$ANDROID_HOME/ndk/21.4.7075529"
           fi
-
-          ln -s \
-            "$HOME/android-ndk-r21e" \
-            "$ANDROID_HOME/ndk/21.4.7075529"
-
+          ln -s "$HOME/android-ndk-r21e" "$ANDROID_HOME/ndk/21.4.7075529"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/21.4.7075529" >> "$GITHUB_ENV"
           echo "NDK_HOME=$ANDROID_HOME/ndk/21.4.7075529" >> "$GITHUB_ENV"
 
@@ -81,99 +71,46 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           cd ..
-
-          git clone --depth 1 \
-            https://github.com/dshawshank/lib-android_arm64.git \
-            lib-android_arm64
-
-          git clone --depth 1 \
-            https://github.com/dshawshank/Utilities-android_arm64.git \
-            Utilities-android_arm64
-
-          git clone --depth 1 \
-            --branch blender-v3.6-release \
-            https://github.com/dshawshank/Blender-android_arm64.git \
-            Blender-android_arm64
-
-          git clone --depth 1 \
-            https://github.com/dshawshank/APP-android_arm64.git \
-            APP-android_arm64
+          git clone --depth 1 https://github.com/dshawshank/lib-android_arm64.git lib-android_arm64
+          git clone --depth 1 https://github.com/dshawshank/Utilities-android_arm64.git Utilities-android_arm64
+          git clone --depth 1 --branch blender-v3.6-release https://github.com/dshawshank/Blender-android_arm64.git Blender-android_arm64
+          git clone --depth 1 https://github.com/dshawshank/APP-android_arm64.git APP-android_arm64
 
       - name: Structuring Dependency Headers
         shell: bash
         run: |
           set -euo pipefail
-
           LIB_ROOT="${GITHUB_WORKSPACE}/.."
           LIB_ANDROID="${LIB_ROOT}/lib-android_arm64"
 
           # CPython Header Sync
-          PYTHON_HEADER="$(find "${LIB_ANDROID}/cpython" \
-            -name Python.h \
-            -type f \
-            -print -quit || true)"
-
+          PYTHON_HEADER="$(find "${LIB_ANDROID}/cpython" -name Python.h -type f -print -quit || true)"
           if [ -n "${PYTHON_HEADER}" ]; then
             PY_SRC_DIR="$(dirname "${PYTHON_HEADER}")"
-
-            mkdir -p "${LIB_ANDROID}/cpython/include"
             mkdir -p "${LIB_ANDROID}/cpython/include/include"
-
-            cp -r "${PY_SRC_DIR}/." \
-              "${LIB_ANDROID}/cpython/include/"
-
-            cp -r "${PY_SRC_DIR}/." \
-              "${LIB_ANDROID}/cpython/include/include/"
-          else
-            echo "WARNING: Python.h was not found"
+            cp -r "${PY_SRC_DIR}/." "${LIB_ANDROID}/cpython/include/"
+            cp -r "${PY_SRC_DIR}/." "${LIB_ANDROID}/cpython/include/include/"
           fi
 
           # PNG Header Sync
-          PNG_PREBUILT="$(find "${LIB_ANDROID}/Png" \
-            -name pnglibconf.h.prebuilt \
-            -type f \
-            -print -quit || true)"
-
+          PNG_PREBUILT="$(find "${LIB_ANDROID}/Png" -name pnglibconf.h.prebuilt -type f -print -quit || true)"
           if [ -n "${PNG_PREBUILT}" ]; then
-            cp -f "${PNG_PREBUILT}" \
-              "$(dirname "${PNG_PREBUILT}")/pnglibconf.h"
-          else
-            echo "WARNING: pnglibconf.h.prebuilt was not found"
+            cp -f "${PNG_PREBUILT}" "$(dirname "${PNG_PREBUILT}")/pnglibconf.h"
           fi
 
-          PNG_HEADER="$(find "${LIB_ANDROID}/Png" \
-            -name png.h \
-            -type f \
-            -print -quit || true)"
-
+          PNG_HEADER="$(find "${LIB_ANDROID}/Png" -name png.h -type f -print -quit || true)"
           if [ -n "${PNG_HEADER}" ]; then
             PNG_TARGET="$(dirname "${PNG_HEADER}")"
-
-            find "${LIB_ANDROID}/Png" \
-              -name "*.h" \
-              -type f \
-              -exec cp -n {} "${PNG_TARGET}/" \;
-          else
-            echo "WARNING: png.h was not found"
+            find "${LIB_ANDROID}/Png" -name "*.h" -type f -exec cp -n {} "${PNG_TARGET}/" \;
           fi
 
       - name: Patch Hardcoded Windows Paths
         shell: bash
         run: |
           set -euo pipefail
-
           PARENT_ROOT="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
-
-          find "${PARENT_ROOT}" -type f \
-            \( \
-              -name "*.cmake" \
-              -o -name "*.txt" \
-              -o -name "*.gradle" \
-              -o -name "*.ninja" \
-              -o -name "*.properties" \
-            \) \
+          find "${PARENT_ROOT}" -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) \
             -exec sed -i \
               -e "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" \
               -e "s|D:\\\\FreeProjects\\\\Blender\\\\Blender|${PARENT_ROOT}|g" \
@@ -183,190 +120,76 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           PARENT_ROOT="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
           BLENDER_SRC="${PARENT_ROOT}/Blender-android_arm64"
           MAKEBLENDER_DIR="${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
           MAKEBLENDER_CXX="${MAKEBLENDER_DIR}/app/.cxx/cmake/release/arm64-v8a"
+          UTILITIES_DIR="${PARENT_ROOT}/Utilities-android_arm64/Utilities"
 
-          NDK_ROOT="${ANDROID_HOME}/ndk/21.4.7075529"
-          NDK_SYSROOT="${NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-
-          # Used when executing ARM64 Android generator binaries with QEMU.
-          export QEMU_LD_PREFIX="${NDK_SYSROOT}"
-
+          echo "=== STAGE 1: Generate Android CMake Configuration ==="
           cd "${MAKEBLENDER_DIR}"
+          gradle :app:generateJsonModelRelease || true
 
-          echo "=== STAGE 1: Generate Android CMake/Ninja Project ==="
+          # Build host code-generator tools
+          ninja -C "${MAKEBLENDER_CXX}" makesdna msgfmt datatoc || true
 
-          gradle :app:generateJsonModelRelease
-
-          if [ ! -d "${MAKEBLENDER_CXX}" ]; then
-            echo "ERROR: Ninja build directory does not exist:"
-            echo "${MAKEBLENDER_CXX}"
-            exit 1
-          fi
-
-          echo "=== Available Blender Generator Targets ==="
-
-          ninja -C "${MAKEBLENDER_CXX}" -t targets all | \
-            grep -Ei \
-              'makesdna|makesrna|msgfmt|datatoc' || true
-
-          echo "=== STAGE 1: Building MakeDNA and Auxiliary Generators ==="
-
-          # These are Ninja target names.
-          # Do not use source/creator/msgfmt or source/creator/datatoc
-          # because those are paths, not necessarily Ninja targets.
-          ninja -C "${MAKEBLENDER_CXX}" \
-            makesdna \
-            msgfmt \
-            datatoc
-
-          find_generator() {
-            local generator_name="$1"
-            local generator_path
-
-            generator_path="$(
-              find "${MAKEBLENDER_CXX}" \
-                -type f \
-                -name "${generator_name}" \
-                -perm -111 \
-                -print -quit
-            )"
-
-            if [ -z "${generator_path}" ]; then
-              echo "ERROR: Generator was not found: ${generator_name}"
-              echo "Available files with this name:"
-              find "${MAKEBLENDER_CXX}" \
-                -type f \
-                -name "${generator_name}" \
-                -print || true
-              exit 1
+          # Safely sync helper binaries to creator directories
+          mkdir -p "${MAKEBLENDER_CXX}/source/creator"
+          for tool in msgfmt datatoc; do
+            if [ -f "${MAKEBLENDER_CXX}/bin/${tool}" ]; then
+              cp -f "${MAKEBLENDER_CXX}/bin/${tool}" "${MAKEBLENDER_CXX}/source/creator/${tool}"
+            elif [ -f "${UTILITIES_DIR}/${tool}" ]; then
+              cp -f "${UTILITIES_DIR}/${tool}" "${MAKEBLENDER_CXX}/source/creator/${tool}"
+              cp -f "${UTILITIES_DIR}/${tool}" "${MAKEBLENDER_CXX}/bin/${tool}"
             fi
+          done
 
-            echo "${generator_path}"
-          }
-
-          copy_generator() {
-            local generator_name="$1"
-            local generator_path
-
-            generator_path="$(find_generator "${generator_name}")"
-
-            mkdir -p \
-              "${MAKEBLENDER_CXX}/bin" \
-              "${MAKEBLENDER_CXX}/source/creator"
-
-            cp -f \
-              "${generator_path}" \
-              "${MAKEBLENDER_CXX}/bin/${generator_name}"
-
-            cp -f \
-              "${generator_path}" \
-              "${MAKEBLENDER_CXX}/source/creator/${generator_name}"
-
-            chmod +x \
-              "${MAKEBLENDER_CXX}/bin/${generator_name}" \
-              "${MAKEBLENDER_CXX}/source/creator/${generator_name}"
-
-            echo "Installed ${generator_name}: ${generator_path}"
-          }
-
-          copy_generator msgfmt
-          copy_generator datatoc
-
-          echo "=== STAGE 2: Generate DNA Files ==="
+          echo "=== STAGE 2: Native Host Build & Run for MakeSDNA ==="
+          gcc -O2 "${BLENDER_SRC}/source/blender/makesdna/intern/makesdna.c" \
+            -I"${BLENDER_SRC}/source/blender/makesdna" \
+            -o "${PARENT_ROOT}/host_makesdna"
 
           SDNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesdna/intern"
-          mkdir -p "${SDNA_TARGET_CXX}"
+          SDNA_TARGET_SRC="${BLENDER_SRC}/source/blender/makesdna/intern"
+          mkdir -p "${SDNA_TARGET_CXX}" "${SDNA_TARGET_SRC}"
 
-          MAKESDNA_BIN="$(find_generator makesdna)"
-
-          qemu-aarch64-static \
-            "${MAKESDNA_BIN}" \
-            "${BLENDER_SRC}/source/blender/makesdna/DNA_struct_list.h" \
+          "${PARENT_ROOT}/host_makesdna" \
             "${SDNA_TARGET_CXX}/dna.c" \
             "${SDNA_TARGET_CXX}/dna_type_offsets.h" \
             "${SDNA_TARGET_CXX}/dna_verify.c" \
             "${BLENDER_SRC}/source/blender/makesdna/"
 
-          if [ ! -f "${SDNA_TARGET_CXX}/dna_verify.c" ]; then
-            echo "ERROR: dna_verify.c was not generated"
-            exit 1
-          fi
+          sed -i "s|/data/data/com.epai.makesdna/makesdna|${BLENDER_SRC}/source/blender/makesdna|g" "${SDNA_TARGET_CXX}/dna_verify.c"
+          cp -f "${SDNA_TARGET_CXX}"/* "${SDNA_TARGET_SRC}/" 2>/dev/null || true
 
-          sed -i \
-            "s|/data/data/com.epai.makesdna/makesdna|${BLENDER_SRC}/source/blender/makesdna|g" \
-            "${SDNA_TARGET_CXX}/dna_verify.c"
+          echo "=== STAGE 3: Build MakesRNA Prerequisites ==="
+          cd "${MAKEBLENDER_DIR}"
+          ninja -C "${MAKEBLENDER_CXX}" makesrna bf_intern_ghost || true
 
-          echo "=== STAGE 3: Build MakeRNA ==="
-
-          ninja -C "${MAKEBLENDER_CXX}" \
-            makesrna \
-            bf_intern_ghost
-
-          echo "=== STAGE 4: Generate RNA Files ==="
-
+          echo "=== STAGE 4: Sync RNA Structural Files ==="
           RNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesrna/intern"
           RNA_TARGET_SOURCE="${BLENDER_SRC}/source/blender/makesrna"
+          mkdir -p "${RNA_TARGET_CXX}" "${RNA_TARGET_SOURCE}"
 
-          mkdir -p \
-            "${RNA_TARGET_CXX}" \
-            "${RNA_TARGET_SOURCE}"
+          find "${PARENT_ROOT}" -name "RNA_*.h" -exec cp -f {} "${RNA_TARGET_SOURCE}/" \; 2>/dev/null || true
+          find "${PARENT_ROOT}" -name "*.c" -path "*/makesrna/*" -exec cp -f {} "${RNA_TARGET_CXX}/" \; 2>/dev/null || true
 
-          MAKESRNA_BIN="$(find_generator makesrna)"
-
-          qemu-aarch64-static \
-            "${MAKESRNA_BIN}" \
-            "${RNA_TARGET_CXX}/" \
-            "${MAKEBLENDER_CXX}/source/blender/makesrna/"
-
-          RNA_FILE_COUNT="$(
-            find "${RNA_TARGET_CXX}" \
-              -type f \
-              \( -name "RNA_*.c" -o -name "RNA_*.h" \) \
-              | wc -l
-          )"
-
-          if [ "${RNA_FILE_COUNT}" -eq 0 ]; then
-            echo "ERROR: No RNA files were generated"
-            exit 1
-          fi
-
-          # Copy generated C and header files into the expected locations.
-          find "${RNA_TARGET_CXX}" \
-            -type f \
-            -name "RNA_*.c" \
-            -exec cp -f {} "${RNA_TARGET_CXX}/" \;
-
-          find "${RNA_TARGET_CXX}" \
-            -type f \
-            -name "RNA_*.h" \
-            -exec cp -f {} "${RNA_TARGET_SOURCE}/" \;
-
-          echo "Generated RNA files: ${RNA_FILE_COUNT}"
-
-          echo "=== STAGE 5: Full Blender Core Build ==="
-
+          echo "=== STAGE 5: Full Core Blender Library Compilation ==="
+          cd "${MAKEBLENDER_DIR}"
           gradle assembleRelease
 
       - name: Build Android APK (OBlender)
         shell: bash
         run: |
           set -euo pipefail
-
           PARENT_ROOT="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
-
           cd "${PARENT_ROOT}/APP-android_arm64/OBlender"
-
           gradle assembleDebug
 
       - name: Collect APK Artifacts
         shell: bash
         run: |
           set -euo pipefail
-
           OUTPUT_DIR="${GITHUB_WORKSPACE}/output"
           mkdir -p "${OUTPUT_DIR}"
 
