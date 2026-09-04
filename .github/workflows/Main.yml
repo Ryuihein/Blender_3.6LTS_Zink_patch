@@ -146,19 +146,25 @@ jobs:
 
           echo "=== STAGE 2: Native Host Build & Run for MakeSDNA ==="
           cd "${BLENDER_SRC}"
+
+          # Locate the directory containing CMake-generated dna_includes_as_strings.h
+          GEN_HEADER_DIR="$(find "${PARENT_ROOT}" -name "dna_includes_as_strings.h" -exec dirname {} \; | head -n 1)"
+
           gcc -O2 -std=gnu11 \
             -I. \
+            -Iintern/atomic \
             -Iintern/guardedalloc \
             -Isource/blender/makesdna \
             -Isource/blender/makesdna/intern \
             -Isource/blender/blenlib \
+            ${GEN_HEADER_DIR:+-I"${GEN_HEADER_DIR}"} \
             intern/guardedalloc/intern/mallocn.c \
             intern/guardedalloc/intern/mallocn_guarded_impl.c \
             intern/guardedalloc/intern/mallocn_lockfree_impl.c \
             source/blender/makesdna/intern/makesdna.c \
-            source/blender/makesdna/intern/dna_gen.c \
             -o host_makesdna -lpthread -ldl
 
+          echo "=== Running host_makesdna ==="
           ./host_makesdna source/blender/makesdna/intern/dna.c source/blender/makesdna/intern/dna_type_offsets.h
 
           echo "=== STAGE 3: Build MakesRNA Prerequisites ==="
