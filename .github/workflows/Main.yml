@@ -115,6 +115,7 @@ jobs:
               -e "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" \
               -e "s|D:\\\\FreeProjects\\\\Blender\\\\Blender|${PARENT_ROOT}|g" \
               {} +
+      
 
       - name: Multi-Stage Bootstrap Build
         shell: bash
@@ -153,11 +154,9 @@ jobs:
 
           HOST_C_FILES=()
 
-          # 1. Include guardedalloc C files (exclude lockfree implementation)
+          # 1. Include ALL guardedalloc C files (including lockfree implementation)
           while IFS= read -r f; do
-            if [[ "$f" != *"mallocn_lockfree_impl.c"* ]]; then
-              HOST_C_FILES+=("$f")
-            fi
+            HOST_C_FILES+=("$f")
           done < <(find "${BLENDER_SRC}/intern/guardedalloc/intern" -name "*.c" -type f)
 
           # 2. Include specific host generator C files ONLY
