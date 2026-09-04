@@ -152,21 +152,24 @@ jobs:
             DNA_INC_ARG="-I$(dirname "${DNA_STRINGS_HEADER}")"
           fi
 
-          # Dynamically resolve host C source paths regardless of prefix convention
           HOST_C_FILES=()
-          TARGET_NAMES=("makesdna.c" "dna_utils.c" "ghash.c" "ghash_utils.c" "hash_mm2.c" "memarena.c" "mempool.c" "assert.c" "string.c" "string_utf8.c" "dynstr.c" "mallocn.c" "mallocn_guarded_impl.c" "mallocn_lockfree_impl.c" "wcwidth.c")
 
-          for name in "${TARGET_NAMES[@]}"; do
+          # 1. Include all guardedalloc C files
+          while IFS= read -r f; do HOST_C_FILES+=("$f"); done < <(find "${BLENDER_SRC}/intern/guardedalloc/intern" -name "*.c" -type f)
+
+          # 2. Include makesdna core C files
+          while IFS= read -r f; do HOST_C_FILES+=("$f"); done < <(find "${BLENDER_SRC}/source/blender/makesdna" -name "*.c" -type f)
+
+          # 3. Include required blenlib and extern C files (including BLI_hash_mm2a.c)
+          BLENLIB_FILES=("BLI_ghash.c" "BLI_ghash_utils.c" "BLI_hash_mm2a.c" "BLI_memarena.c" "BLI_mempool.c" "BLI_assert.c" "BLI_string.c" "BLI_string_utf8.c" "BLI_dynstr.c" "wcwidth.c")
+          for name in "${BLENLIB_FILES[@]}"; do
             FOUND_FILE="$(find "${BLENDER_SRC}" -name "${name}" -type f -print -quit || true)"
-            if [ -z "${FOUND_FILE}" ]; then
-              FOUND_FILE="$(find "${BLENDER_SRC}" -name "BLI_${name}" -type f -print -quit || true)"
-            fi
             if [ -n "${FOUND_FILE}" ]; then
               HOST_C_FILES+=("${FOUND_FILE}")
             fi
           done
 
-          # Compile makesdna host executable natively with NDEBUG to strip debug allocation tracking
+          # Compile makesdna host executable natively
           gcc -O2 -w -DNDEBUG -D_GNU_SOURCE -D_LARGEFILE64_SOURCE \
             "${HOST_C_FILES[@]}" \
             -I"${BLENDER_SRC}/source/blender/makesdna" \
@@ -192,7 +195,7 @@ jobs:
             "${BLENDER_SRC}/source/blender/makesdna/"
 
           sed -i "s|/data/data/com.epai.makesdna/makesdna|${BLENDER_SRC}/source/blender/makesdna|g" "${SDNA_TARGET_CXX}/dna_verify.c"
-          cp -f "${SDNA_TARGET_CXX}"/* "${SDNA_TARGET_SRC}/" 2>/dev/null || true
+          cp -f "${SDNA_TARGET_CXX}"/* "${SDNA_TARGET_SRC}/" 2>/devnull || true
 
           echo "=== STAGE 3: Build MakesRNA Prerequisites ==="
           cd "${MAKEBLENDER_DIR}"
@@ -203,8 +206,8 @@ jobs:
           RNA_TARGET_SOURCE="${BLENDER_SRC}/source/blender/makesrna"
           mkdir -p "${RNA_TARGET_CXX}" "${RNA_TARGET_SOURCE}"
 
-          find "${PARENT_ROOT}" -name "RNA_*.h" -exec cp -f {} "${RNA_TARGET_SOURCE}/" \; 2>/dev/null || true
-          find "${PARENT_ROOT}" -name "*.c" -path "*/makesrna/*" -exec cp -f {} "${RNA_TARGET_CXX}/" \; 2>/dev/null || true
+          find "${PARENT_ROOT}" -name "RNA_*.h" -exec cp -f {} "${RNA_TARGET_SOURCE}/" \; 2>/devnull || true
+          find "${PARENT_ROOT}" -name "*.c" -path "*/makesrna/*" -exec cp -f {} "${RNA_TARGET_CXX}/" \; 2>/devnull || true
 
           echo "=== STAGE 5: Full Core Blender Library Compilation ==="
           cd "${MAKEBLENDER_DIR}"
