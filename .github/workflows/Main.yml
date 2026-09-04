@@ -154,7 +154,7 @@ jobs:
 
           # Dynamically resolve host C source paths regardless of prefix convention
           HOST_C_FILES=()
-          TARGET_NAMES=("makesdna.c" "dna_utils.c" "ghash.c" "ghash_utils.c" "memarena.c" "mempool.c" "assert.c" "string.c" "string_utf8.c" "dynstr.c" "mallocn.c" "mallocn_guarded_impl.c" "mallocn_lockfree_impl.c")
+          TARGET_NAMES=("makesdna.c" "dna_utils.c" "ghash.c" "ghash_utils.c" "hash_mm2.c" "memarena.c" "mempool.c" "assert.c" "string.c" "string_utf8.c" "dynstr.c" "mallocn.c" "mallocn_guarded_impl.c" "mallocn_lockfree_impl.c" "wcwidth.c")
 
           for name in "${TARGET_NAMES[@]}"; do
             FOUND_FILE="$(find "${BLENDER_SRC}" -name "${name}" -type f -print -quit || true)"
@@ -166,8 +166,8 @@ jobs:
             fi
           done
 
-          # Compile makesdna host executable natively (using -w to bypass strict warning-as-error checks)
-          gcc -O2 -w -D_GNU_SOURCE -D_LARGEFILE64_SOURCE \
+          # Compile makesdna host executable natively with NDEBUG to strip debug allocation tracking
+          gcc -O2 -w -DNDEBUG -D_GNU_SOURCE -D_LARGEFILE64_SOURCE \
             "${HOST_C_FILES[@]}" \
             -I"${BLENDER_SRC}/source/blender/makesdna" \
             -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
