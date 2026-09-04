@@ -145,12 +145,22 @@ jobs:
           done
 
           echo "=== STAGE 2: Native Host Build & Run for MakeSDNA ==="
-          # Compile makesdna natively on Ubuntu runner with all required include directories
+          # Locate generated dna_includes_as_strings.h header directory from CMake output
+          DNA_STRINGS_HEADER="$(find "${PARENT_ROOT}" -name "dna_includes_as_strings.h" -type f -print -quit || true)"
+          DNA_INC_ARG=""
+          if [ -n "${DNA_STRINGS_HEADER}" ]; then
+            DNA_INC_ARG="-I$(dirname "${DNA_STRINGS_HEADER}")"
+          fi
+
+          # Compile makesdna natively on Ubuntu runner with dynamically found generated headers
           gcc -O2 "${BLENDER_SRC}/source/blender/makesdna/intern/makesdna.c" \
             -I"${BLENDER_SRC}/source/blender/makesdna" \
             -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
             -I"${BLENDER_SRC}/intern/guardedalloc" \
             -I"${BLENDER_SRC}/source/blender/blenlib" \
+            -I"${MAKEBLENDER_CXX}/source/blender/makesdna/intern" \
+            -I"${MAKEBLENDER_CXX}/source/blender/makesdna" \
+            ${DNA_INC_ARG} \
             -o "${PARENT_ROOT}/host_makesdna"
 
           SDNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesdna/intern"
