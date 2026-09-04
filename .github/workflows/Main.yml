@@ -152,21 +152,23 @@ jobs:
             DNA_INC_ARG="-I$(dirname "${DNA_STRINGS_HEADER}")"
           fi
 
-          # Compile makesdna host tool with target-specific dependencies
+          # Dynamically resolve host C source paths regardless of prefix convention
+          HOST_C_FILES=()
+          TARGET_NAMES=("makesdna.c" "dna_utils.c" "ghash.c" "ghash_utils.c" "memarena.c" "mempool.c" "assert.c" "string.c" "string_utf8.c" "dynstr.c" "mallocn.c" "mallocn_guarded_impl.c" "mallocn_lockfree_impl.c")
+
+          for name in "${TARGET_NAMES[@]}"; do
+            FOUND_FILE="$(find "${BLENDER_SRC}" -name "${name}" -type f -print -quit || true)"
+            if [ -z "${FOUND_FILE}" ]; then
+              FOUND_FILE="$(find "${BLENDER_SRC}" -name "BLI_${name}" -type f -print -quit || true)"
+            fi
+            if [ -n "${FOUND_FILE}" ]; then
+              HOST_C_FILES+=("${FOUND_FILE}")
+            fi
+          done
+
+          # Compile makesdna host executable natively
           gcc -O2 -D_GNU_SOURCE -D_LARGEFILE64_SOURCE \
-            "${BLENDER_SRC}/source/blender/makesdna/intern/makesdna.c" \
-            "${BLENDER_SRC}/source/blender/makesdna/intern/dna_utils.c" \
-            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_ghash.c" \
-            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_ghash_utils.c" \
-            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_memarena.c" \
-            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_mempool.c" \
-            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_assert.c" \
-            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_string.c" \
-            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_string_utf8.c" \
-            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_dynstr.c" \
-            "${BLENDER_SRC}/intern/guardedalloc/intern/mallocn.c" \
-            "${BLENDER_SRC}/intern/guardedalloc/intern/mallocn_guarded_impl.c" \
-            "${BLENDER_SRC}/intern/guardedalloc/intern/mallocn_lockfree_impl.c" \
+            "${HOST_C_FILES[@]}" \
             -I"${BLENDER_SRC}/source/blender/makesdna" \
             -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
             -I"${BLENDER_SRC}/intern/guardedalloc" \
