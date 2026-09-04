@@ -1,4 +1,4 @@
-name: Build Blender 3.6 LTS apk
+name: Build Blender 3.6 LTS
 
 on:
   workflow_dispatch:
@@ -153,8 +153,12 @@ jobs:
 
           HOST_C_FILES=()
 
-          # 1. Include all guardedalloc C files
-          while IFS= read -r f; do HOST_C_FILES+=("$f"); done < <(find "${BLENDER_SRC}/intern/guardedalloc/intern" -name "*.c" -type f)
+          # 1. Include guardedalloc C files (exclude lockfree implementation)
+          while IFS= read -r f; do
+            if [[ "$f" != *"mallocn_lockfree_impl.c"* ]]; then
+              HOST_C_FILES+=("$f")
+            fi
+          done < <(find "${BLENDER_SRC}/intern/guardedalloc/intern" -name "*.c" -type f)
 
           # 2. Include specific host generator C files ONLY
           MAKESDNA_FILES=("makesdna.c" "dna_utils.c")
@@ -192,7 +196,7 @@ jobs:
             fi
           done
 
-          # Compile makesdna host executable natively with guardedalloc defines
+          # Compile makesdna host executable natively
           gcc -O2 -w -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -DWITH_GUARDEDALLOC -DWITH_MEM_GUARDEDALLOC \
             "${HOST_C_FILES[@]}" \
             -I"${BLENDER_SRC}/source/blender/makesdna" \
