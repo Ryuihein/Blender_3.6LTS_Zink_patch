@@ -145,7 +145,6 @@ jobs:
           done
 
           echo "=== STAGE 2: Native Host Build & Run for MakeSDNA ==="
-          # Locate generated dna_includes_as_strings.h header directory
           DNA_STRINGS_HEADER="$(find "${PARENT_ROOT}" -name "dna_includes_as_strings.h" -type f -print -quit || true)"
           DNA_INC_ARG=""
           if [ -n "${DNA_STRINGS_HEADER}" ]; then
@@ -157,7 +156,7 @@ jobs:
           # 1. Include all guardedalloc C files
           while IFS= read -r f; do HOST_C_FILES+=("$f"); done < <(find "${BLENDER_SRC}/intern/guardedalloc/intern" -name "*.c" -type f)
 
-          # 2. Include specific host generator C files ONLY (exclude runtime dna_defaults.c)
+          # 2. Include specific host generator C files ONLY
           MAKESDNA_FILES=("makesdna.c" "dna_utils.c")
           for name in "${MAKESDNA_FILES[@]}"; do
             FOUND_FILE="$(find "${BLENDER_SRC}/source/blender/makesdna" -name "${name}" -type f -print -quit || true)"
@@ -170,6 +169,8 @@ jobs:
           BLENLIB_FILES=(
             "BLI_ghash.c" 
             "BLI_ghash_utils.c" 
+            "hash_mm2.c" 
+            "hash_mm2a.c" 
             "BLI_hash_mm2.c" 
             "BLI_hash_mm2a.c" 
             "BLI_memarena.c" 
@@ -191,8 +192,8 @@ jobs:
             fi
           done
 
-          # Compile makesdna host executable natively with guardedalloc enabled
-          gcc -O2 -w -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -DWITH_GUARDEDALLOC \
+          # Compile makesdna host executable natively with guardedalloc defines
+          gcc -O2 -w -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -DWITH_GUARDEDALLOC -DWITH_MEM_GUARDEDALLOC \
             "${HOST_C_FILES[@]}" \
             -I"${BLENDER_SRC}/source/blender/makesdna" \
             -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
