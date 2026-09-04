@@ -115,7 +115,6 @@ jobs:
               -e "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" \
               -e "s|D:\\\\FreeProjects\\\\Blender\\\\Blender|${PARENT_ROOT}|g" \
               {} +
-      
 
       - name: Multi-Stage Bootstrap Build
         shell: bash
@@ -146,83 +145,21 @@ jobs:
           done
 
           echo "=== STAGE 2: Native Host Build & Run for MakeSDNA ==="
-          DNA_STRINGS_HEADER="$(find "${PARENT_ROOT}" -name "dna_includes_as_strings.h" -type f -print -quit || true)"
-          DNA_INC_ARG=""
-          if [ -n "${DNA_STRINGS_HEADER}" ]; then
-            DNA_INC_ARG="-I$(dirname "${DNA_STRINGS_HEADER}")"
-          fi
+          cd "${BLENDER_SRC}"
+          gcc -O2 -std=gnu11 \
+            -I. \
+            -Iintern/guardedalloc \
+            -Isource/blender/makesdna \
+            -Isource/blender/makesdna/intern \
+            -Isource/blender/blenlib \
+            intern/guardedalloc/intern/mallocn.c \
+            intern/guardedalloc/intern/mallocn_guarded_impl.c \
+            intern/guardedalloc/intern/mallocn_lockfree_impl.c \
+            source/blender/makesdna/intern/makesdna.c \
+            source/blender/makesdna/intern/dna_gen.c \
+            -o host_makesdna -lpthread -ldl
 
-          HOST_C_FILES=()
-
-          # 1. Include ALL guardedalloc C files (including lockfree implementation)
-          while IFS= read -r f; do
-            HOST_C_FILES+=("$f")
-          done < <(find "${BLENDER_SRC}/intern/guardedalloc/intern" -name "*.c" -type f)
-
-          # 2. Include specific host generator C files ONLY
-          MAKESDNA_FILES=("makesdna.c" "dna_utils.c")
-          for name in "${MAKESDNA_FILES[@]}"; do
-            FOUND_FILE="$(find "${BLENDER_SRC}/source/blender/makesdna" -name "${name}" -type f -print -quit || true)"
-            if [ -n "${FOUND_FILE}" ]; then
-              HOST_C_FILES+=("${FOUND_FILE}")
-            fi
-          done
-
-          # 3. Include required blenlib and extern C files
-          BLENLIB_FILES=(
-            "BLI_ghash.c" 
-            "BLI_ghash_utils.c" 
-            "hash_mm2.c" 
-            "hash_mm2a.c" 
-            "BLI_hash_mm2.c" 
-            "BLI_hash_mm2a.c" 
-            "BLI_memarena.c" 
-            "BLI_mempool.c" 
-            "BLI_assert.c" 
-            "BLI_string.c" 
-            "BLI_string_utf8.c" 
-            "BLI_dynstr.c" 
-            "BLI_path_util.c" 
-            "BLI_endian.c" 
-            "BLI_math_base.c" 
-            "wcwidth.c"
-            "string.c"
-          )
-          for name in "${BLENLIB_FILES[@]}"; do
-            FOUND_FILE="$(find "${BLENDER_SRC}" -name "${name}" -type f -print -quit || true)"
-            if [ -n "${FOUND_FILE}" ]; then
-              HOST_C_FILES+=("${FOUND_FILE}")
-            fi
-          done
-
-          # Compile makesdna host executable natively
-          gcc -O2 -w -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -DWITH_GUARDEDALLOC -DWITH_MEM_GUARDEDALLOC \
-            "${HOST_C_FILES[@]}" \
-            -I"${BLENDER_SRC}/source/blender/makesdna" \
-            -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
-            -I"${BLENDER_SRC}/intern/guardedalloc" \
-            -I"${BLENDER_SRC}/source/blender/blenlib" \
-            -I"${BLENDER_SRC}/source/blender/imbuf" \
-            -I"${BLENDER_SRC}/intern/atomic" \
-            -I"${BLENDER_SRC}/extern/wcwidth" \
-            -I"${MAKEBLENDER_CXX}/source/blender/makesdna/intern" \
-            -I"${MAKEBLENDER_CXX}/source/blender/makesdna" \
-            ${DNA_INC_ARG} \
-            -lm -lpthread -ldl \
-            -o "${PARENT_ROOT}/host_makesdna"
-
-          SDNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesdna/intern"
-          SDNA_TARGET_SRC="${BLENDER_SRC}/source/blender/makesdna/intern"
-          mkdir -p "${SDNA_TARGET_CXX}" "${SDNA_TARGET_SRC}"
-
-          "${PARENT_ROOT}/host_makesdna" \
-            "${SDNA_TARGET_CXX}/dna.c" \
-            "${SDNA_TARGET_CXX}/dna_type_offsets.h" \
-            "${SDNA_TARGET_CXX}/dna_verify.c" \
-            "${BLENDER_SRC}/source/blender/makesdna/"
-
-          sed -i "s|/data/data/com.epai.makesdna/makesdna|${BLENDER_SRC}/source/blender/makesdna|g" "${SDNA_TARGET_CXX}/dna_verify.c"
-          cp -f "${SDNA_TARGET_CXX}"/* "${SDNA_TARGET_SRC}/" 2>/devnull || true
+          ./host_makesdna source/blender/makesdna/intern/dna.c source/blender/makesdna/intern/dna_type_offsets.h
 
           echo "=== STAGE 3: Build MakesRNA Prerequisites ==="
           cd "${MAKEBLENDER_DIR}"
