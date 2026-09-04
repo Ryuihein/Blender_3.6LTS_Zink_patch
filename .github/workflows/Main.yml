@@ -157,10 +157,16 @@ jobs:
           # 1. Include all guardedalloc C files
           while IFS= read -r f; do HOST_C_FILES+=("$f"); done < <(find "${BLENDER_SRC}/intern/guardedalloc/intern" -name "*.c" -type f)
 
-          # 2. Include makesdna core C files
-          while IFS= read -r f; do HOST_C_FILES+=("$f"); done < <(find "${BLENDER_SRC}/source/blender/makesdna" -name "*.c" -type f)
+          # 2. Include specific host generator C files ONLY (exclude runtime dna_defaults.c)
+          MAKESDNA_FILES=("makesdna.c" "dna_utils.c")
+          for name in "${MAKESDNA_FILES[@]}"; do
+            FOUND_FILE="$(find "${BLENDER_SRC}/source/blender/makesdna" -name "${name}" -type f -print -quit || true)"
+            if [ -n "${FOUND_FILE}" ]; then
+              HOST_C_FILES+=("${FOUND_FILE}")
+            fi
+          done
 
-          # 3. Include required blenlib and extern C files (including BLI_hash_mm2a.c)
+          # 3. Include required blenlib and extern C files
           BLENLIB_FILES=("BLI_ghash.c" "BLI_ghash_utils.c" "BLI_hash_mm2a.c" "BLI_memarena.c" "BLI_mempool.c" "BLI_assert.c" "BLI_string.c" "BLI_string_utf8.c" "BLI_dynstr.c" "wcwidth.c")
           for name in "${BLENLIB_FILES[@]}"; do
             FOUND_FILE="$(find "${BLENDER_SRC}" -name "${name}" -type f -print -quit || true)"
@@ -176,6 +182,7 @@ jobs:
             -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
             -I"${BLENDER_SRC}/intern/guardedalloc" \
             -I"${BLENDER_SRC}/source/blender/blenlib" \
+            -I"${BLENDER_SRC}/source/blender/imbuf" \
             -I"${BLENDER_SRC}/intern/atomic" \
             -I"${BLENDER_SRC}/extern/wcwidth" \
             -I"${MAKEBLENDER_CXX}/source/blender/makesdna/intern" \
