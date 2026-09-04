@@ -170,6 +170,7 @@ jobs:
           BLENLIB_FILES=(
             "BLI_ghash.c" 
             "BLI_ghash_utils.c" 
+            "BLI_hash_mm2.c" 
             "BLI_hash_mm2a.c" 
             "BLI_memarena.c" 
             "BLI_mempool.c" 
@@ -181,6 +182,7 @@ jobs:
             "BLI_endian.c" 
             "BLI_math_base.c" 
             "wcwidth.c"
+            "string.c"
           )
           for name in "${BLENLIB_FILES[@]}"; do
             FOUND_FILE="$(find "${BLENDER_SRC}" -name "${name}" -type f -print -quit || true)"
@@ -189,8 +191,8 @@ jobs:
             fi
           done
 
-          # Compile makesdna host executable natively with guardedalloc macros enabled
-          gcc -O2 -w -DNDEBUG -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -DWITH_GUARDEDALLOC \
+          # Compile makesdna host executable natively with guardedalloc enabled
+          gcc -O2 -w -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -DWITH_GUARDEDALLOC \
             "${HOST_C_FILES[@]}" \
             -I"${BLENDER_SRC}/source/blender/makesdna" \
             -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
