@@ -152,21 +152,27 @@ jobs:
             DNA_INC_ARG="-I$(dirname "${DNA_STRINGS_HEADER}")"
           fi
 
-          # Collect all supporting C sources needed for DNA, memory allocation, and hash containers
-          C_SOURCES=()
-          while IFS= read -r -d '' file; do
-            C_SOURCES+=("$file")
-          done < <(find "${BLENDER_SRC}/source/blender/makesdna/intern" \
-                        "${BLENDER_SRC}/intern/guardedalloc/intern" \
-                        "${BLENDER_SRC}/source/blender/blenlib/intern" \
-                        -maxdepth 1 -name "*.c" -print0 2>/dev/null)
-
-          # Compile makesdna natively on host with all required implementation C files
-          gcc -O2 "${C_SOURCES[@]}" \
+          # Compile makesdna host tool with target-specific dependencies
+          gcc -O2 -D_GNU_SOURCE -D_LARGEFILE64_SOURCE \
+            "${BLENDER_SRC}/source/blender/makesdna/intern/makesdna.c" \
+            "${BLENDER_SRC}/source/blender/makesdna/intern/dna_utils.c" \
+            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_ghash.c" \
+            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_ghash_utils.c" \
+            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_memarena.c" \
+            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_mempool.c" \
+            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_assert.c" \
+            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_string.c" \
+            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_string_utf8.c" \
+            "${BLENDER_SRC}/source/blender/blenlib/intern/BLI_dynstr.c" \
+            "${BLENDER_SRC}/intern/guardedalloc/intern/mallocn.c" \
+            "${BLENDER_SRC}/intern/guardedalloc/intern/mallocn_guarded_impl.c" \
+            "${BLENDER_SRC}/intern/guardedalloc/intern/mallocn_lockfree_impl.c" \
             -I"${BLENDER_SRC}/source/blender/makesdna" \
             -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
             -I"${BLENDER_SRC}/intern/guardedalloc" \
             -I"${BLENDER_SRC}/source/blender/blenlib" \
+            -I"${BLENDER_SRC}/intern/atomic" \
+            -I"${BLENDER_SRC}/extern/wcwidth" \
             -I"${MAKEBLENDER_CXX}/source/blender/makesdna/intern" \
             -I"${MAKEBLENDER_CXX}/source/blender/makesdna" \
             ${DNA_INC_ARG} \
