@@ -1,114 +1,270 @@
-name: Build Blender 3.6 LTS for Android ARM64
+name: Build Blender 3.6 LTS apk
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 jobs:
-  build-android:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Maximize Disk Space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo apt-get clean
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Install Host Build Dependencies
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "11"
+
+      - name: Set up QEMU and Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
+            qemu-user-static \
+            binfmt-support \
+            unzip \
+            curl \
             cmake \
             ninja-build \
-            git \
             python3 \
-            libx11-dev \
-            libxxi-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libglew-dev
+            gettext \
+            git
 
-      - name: Checkout Blender Source (v3.6.15)
+      - name: Cache Android NDK r21e
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/android-ndk-r21e
+          key: ndk-r21e-linux-x86_64
+
+      - name: Install NDK if not cached
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        shell: bash
         run: |
-          git clone --depth 1 --branch v3.6.15 https://projects.blender.org/blender/blender.git blender-src
+          set -euo pipefail
+          mkdir -p "$HOME/ndk-download"
+          curl -fL \
+            -o "$HOME/ndk-download/ndk.zip" \
+            "https://dl.google.com/android/repository/android-ndk-r21e-linux-x86_64.zip"
+          unzip -q "$HOME/ndk-download/ndk.zip" -d "$HOME"
+          rm -rf "$HOME/ndk-download"
 
-      - name: STAGE 1 - Build Host Code Generators (makesdna & makesrna)
+      - name: Configure NDK Environment Path
+        shell: bash
         run: |
-          mkdir -p build_host
-          cd build_host
+          set -euo pipefail
+          mkdir -p "$ANDROID_HOME/ndk"
+          if [ -L "$ANDROID_HOME/ndk/21.4.7075529" ] || [ -e "$ANDROID_HOME/ndk/21.4.7075529" ]; then
+            rm -rf "$ANDROID_HOME/ndk/21.4.7075529"
+          fi
+          ln -s "$HOME/android-ndk-r21e" "$ANDROID_HOME/ndk/21.4.7075529"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/21.4.7075529" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/21.4.7075529" >> "$GITHUB_ENV"
 
-          # Configure minimal x86_64 host build required for DNA/RNA generators
-          cmake ../blender-src \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DWITH_PYTHON=OFF \
-            -DWITH_INTERNATIONAL=OFF \
-            -DWITH_CYCLES=OFF \
-            -DWITH_BUILDINFO=OFF \
-            -DWITH_OPENMP=OFF \
-            -DWITH_HEADLESS=ON
+      - name: Setup Gradle 6.9.4
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "6.9.4"
 
-          # Build host executables
-          ninja makesdna makesrna
-
-      - name: STAGE 2 - Run Host Code Generators & Pre-Generate DNA/RNA Files
+      - name: Clone All Sibling Repositories
+        shell: bash
         run: |
-          BLENDER_SRC="$(pwd)/blender-src"
-          HOST_BIN="$(pwd)/build_host/bin"
+          set -euo pipefail
+          cd ..
+          git clone --depth 1 https://github.com/dshawshank/lib-android_arm64.git lib-android_arm64
+          git clone --depth 1 https://github.com/dshawshank/Utilities-android_arm64.git Utilities-android_arm64
+          git clone --depth 1 --branch blender-v3.6-release https://github.com/dshawshank/Blender-android_arm64.git Blender-android_arm64
+          git clone --depth 1 https://github.com/dshawshank/APP-android_arm64.git APP-android_arm64
 
-          # Create target output directories inside source tree
-          mkdir -p "${BLENDER_SRC}/source/blender/makesdna/intern"
-          mkdir -p "${BLENDER_SRC}/source/blender/makesrna/intern"
+      - name: Structuring Dependency Headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIB_ROOT="${GITHUB_WORKSPACE}/.."
+          LIB_ANDROID="${LIB_ROOT}/lib-android_arm64"
 
-          echo "=== Generating DNA Files ==="
-          "${HOST_BIN}/makesdna" \
-            "${BLENDER_SRC}/source/blender/makesdna/intern/dna.c" \
-            "${BLENDER_SRC}/source/blender/makesdna/intern/dna_type_offsets.h" \
-            "${BLENDER_SRC}/source/blender/makesdna/intern/dna_verify.c" \
+          # CPython Header Sync
+          PYTHON_HEADER="$(find "${LIB_ANDROID}/cpython" -name Python.h -type f -print -quit || true)"
+          if [ -n "${PYTHON_HEADER}" ]; then
+            PY_SRC_DIR="$(dirname "${PYTHON_HEADER}")"
+            mkdir -p "${LIB_ANDROID}/cpython/include/include"
+            cp -r "${PY_SRC_DIR}/." "${LIB_ANDROID}/cpython/include/"
+            cp -r "${PY_SRC_DIR}/." "${LIB_ANDROID}/cpython/include/include/"
+          fi
+
+          # PNG Header Sync
+          PNG_PREBUILT="$(find "${LIB_ANDROID}/Png" -name pnglibconf.h.prebuilt -type f -print -quit || true)"
+          if [ -n "${PNG_PREBUILT}" ]; then
+            cp -f "${PNG_PREBUILT}" "$(dirname "${PNG_PREBUILT}")/pnglibconf.h"
+          fi
+
+          PNG_HEADER="$(find "${LIB_ANDROID}/Png" -name png.h -type f -print -quit || true)"
+          if [ -n "${PNG_HEADER}" ]; then
+            PNG_TARGET="$(dirname "${PNG_HEADER}")"
+            find "${LIB_ANDROID}/Png" -name "*.h" -type f -exec cp -n {} "${PNG_TARGET}/" \;
+          fi
+
+      - name: Patch Hardcoded Windows Paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARENT_ROOT="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
+          find "${PARENT_ROOT}" -type f \( -name "*.cmake" -o -name "*.txt" -o -name "*.gradle" -o -name "*.ninja" -o -name "*.properties" \) \
+            -exec sed -i \
+              -e "s|D:/FreeProjects/Blender/Blender|${PARENT_ROOT}|g" \
+              -e "s|D:\\\\FreeProjects\\\\Blender\\\\Blender|${PARENT_ROOT}|g" \
+              {} +
+
+      - name: Multi-Stage Bootstrap Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARENT_ROOT="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
+          BLENDER_SRC="${PARENT_ROOT}/Blender-android_arm64"
+          MAKEBLENDER_DIR="${PARENT_ROOT}/Utilities-android_arm64/MakeBlender"
+          MAKEBLENDER_CXX="${MAKEBLENDER_DIR}/app/.cxx/cmake/release/arm64-v8a"
+          UTILITIES_DIR="${PARENT_ROOT}/Utilities-android_arm64/Utilities"
+
+          echo "=== STAGE 1: Generate Android CMake Configuration ==="
+          cd "${MAKEBLENDER_DIR}"
+          gradle :app:generateJsonModelRelease || true
+
+          # Build host code-generator tools
+          ninja -C "${MAKEBLENDER_CXX}" makesdna msgfmt datatoc || true
+
+          # Safely sync helper binaries to creator directories
+          mkdir -p "${MAKEBLENDER_CXX}/source/creator"
+          for tool in msgfmt datatoc; do
+            if [ -f "${MAKEBLENDER_CXX}/bin/${tool}" ]; then
+              cp -f "${MAKEBLENDER_CXX}/bin/${tool}" "${MAKEBLENDER_CXX}/source/creator/${tool}"
+            elif [ -f "${UTILITIES_DIR}/${tool}" ]; then
+              cp -f "${UTILITIES_DIR}/${tool}" "${MAKEBLENDER_CXX}/source/creator/${tool}"
+              cp -f "${UTILITIES_DIR}/${tool}" "${MAKEBLENDER_CXX}/bin/${tool}"
+            fi
+          done
+
+          echo "=== STAGE 2: Native Host Build & Run for MakeSDNA ==="
+          # Locate generated dna_includes_as_strings.h header directory
+          DNA_STRINGS_HEADER="$(find "${PARENT_ROOT}" -name "dna_includes_as_strings.h" -type f -print -quit || true)"
+          DNA_INC_ARG=""
+          if [ -n "${DNA_STRINGS_HEADER}" ]; then
+            DNA_INC_ARG="-I$(dirname "${DNA_STRINGS_HEADER}")"
+          fi
+
+          HOST_C_FILES=()
+
+          # 1. Include all guardedalloc C files
+          while IFS= read -r f; do HOST_C_FILES+=("$f"); done < <(find "${BLENDER_SRC}/intern/guardedalloc/intern" -name "*.c" -type f)
+
+          # 2. Include specific host generator C files ONLY (exclude runtime dna_defaults.c)
+          MAKESDNA_FILES=("makesdna.c" "dna_utils.c")
+          for name in "${MAKESDNA_FILES[@]}"; do
+            FOUND_FILE="$(find "${BLENDER_SRC}/source/blender/makesdna" -name "${name}" -type f -print -quit || true)"
+            if [ -n "${FOUND_FILE}" ]; then
+              HOST_C_FILES+=("${FOUND_FILE}")
+            fi
+          done
+
+          # 3. Include required blenlib and extern C files
+          BLENLIB_FILES=(
+            "BLI_ghash.c" 
+            "BLI_ghash_utils.c" 
+            "BLI_hash_mm2a.c" 
+            "BLI_memarena.c" 
+            "BLI_mempool.c" 
+            "BLI_assert.c" 
+            "BLI_string.c" 
+            "BLI_string_utf8.c" 
+            "BLI_dynstr.c" 
+            "BLI_path_util.c" 
+            "BLI_endian.c" 
+            "BLI_math_base.c" 
+            "wcwidth.c"
+          )
+          for name in "${BLENLIB_FILES[@]}"; do
+            FOUND_FILE="$(find "${BLENDER_SRC}" -name "${name}" -type f -print -quit || true)"
+            if [ -n "${FOUND_FILE}" ]; then
+              HOST_C_FILES+=("${FOUND_FILE}")
+            fi
+          done
+
+          # Compile makesdna host executable natively with guardedalloc macros enabled
+          gcc -O2 -w -DNDEBUG -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -DWITH_GUARDEDALLOC \
+            "${HOST_C_FILES[@]}" \
+            -I"${BLENDER_SRC}/source/blender/makesdna" \
+            -I"${BLENDER_SRC}/source/blender/makesdna/intern" \
+            -I"${BLENDER_SRC}/intern/guardedalloc" \
+            -I"${BLENDER_SRC}/source/blender/blenlib" \
+            -I"${BLENDER_SRC}/source/blender/imbuf" \
+            -I"${BLENDER_SRC}/intern/atomic" \
+            -I"${BLENDER_SRC}/extern/wcwidth" \
+            -I"${MAKEBLENDER_CXX}/source/blender/makesdna/intern" \
+            -I"${MAKEBLENDER_CXX}/source/blender/makesdna" \
+            ${DNA_INC_ARG} \
+            -lm -lpthread -ldl \
+            -o "${PARENT_ROOT}/host_makesdna"
+
+          SDNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesdna/intern"
+          SDNA_TARGET_SRC="${BLENDER_SRC}/source/blender/makesdna/intern"
+          mkdir -p "${SDNA_TARGET_CXX}" "${SDNA_TARGET_SRC}"
+
+          "${PARENT_ROOT}/host_makesdna" \
+            "${SDNA_TARGET_CXX}/dna.c" \
+            "${SDNA_TARGET_CXX}/dna_type_offsets.h" \
+            "${SDNA_TARGET_CXX}/dna_verify.c" \
             "${BLENDER_SRC}/source/blender/makesdna/"
 
-          echo "=== Generating RNA Files ==="
-          "${HOST_BIN}/makesrna" \
-            "${BLENDER_SRC}/source/blender/makesrna/intern/" \
-            "${BLENDER_SRC}/source/blender/makesrna/intern/"
+          sed -i "s|/data/data/com.epai.makesdna/makesdna|${BLENDER_SRC}/source/blender/makesdna|g" "${SDNA_TARGET_CXX}/dna_verify.c"
+          cp -f "${SDNA_TARGET_CXX}"/* "${SDNA_TARGET_SRC}/" 2>/devnull || true
 
-      - name: STAGE 3 - Cross-Compile Blender for Android ARM64
+          echo "=== STAGE 3: Build MakesRNA Prerequisites ==="
+          cd "${MAKEBLENDER_DIR}"
+          ninja -C "${MAKEBLENDER_CXX}" makesrna bf_intern_ghost || true
+
+          echo "=== STAGE 4: Sync RNA Structural Files ==="
+          RNA_TARGET_CXX="${MAKEBLENDER_CXX}/source/blender/makesrna/intern"
+          RNA_TARGET_SOURCE="${BLENDER_SRC}/source/blender/makesrna"
+          mkdir -p "${RNA_TARGET_CXX}" "${RNA_TARGET_SOURCE}"
+
+          find "${PARENT_ROOT}" -name "RNA_*.h" -exec cp -f {} "${RNA_TARGET_SOURCE}/" \; 2>/devnull || true
+          find "${PARENT_ROOT}" -name "*.c" -path "*/makesrna/*" -exec cp -f {} "${RNA_TARGET_CXX}/" \; 2>/devnull || true
+
+          echo "=== STAGE 5: Full Core Blender Library Compilation ==="
+          cd "${MAKEBLENDER_DIR}"
+          gradle assembleRelease
+
+      - name: Build Android APK (OBlender)
+        shell: bash
         run: |
-          BLENDER_SRC="$(pwd)/blender-src"
-          NDK_PATH="${ANDROID_NDK_LATEST_HOME}"
+          set -euo pipefail
+          PARENT_ROOT="$(cd "${GITHUB_WORKSPACE}/.." && pwd)"
+          cd "${PARENT_ROOT}/APP-android_arm64/OBlender"
+          gradle assembleDebug
 
-          mkdir -p build_android
-          cd build_android
+      - name: Collect APK Artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT_DIR="${GITHUB_WORKSPACE}/output"
+          mkdir -p "${OUTPUT_DIR}"
 
-          # Configure CMake with Android NDK Toolchain
-          cmake "${BLENDER_SRC}" \
-            -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="${NDK_PATH}/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-28 \
-            -DANDROID_STL=c++_shared \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DWITH_PYTHON=OFF \
-            -DWITH_INTERNATIONAL=OFF \
-            -DWITH_CYCLES=OFF \
-            -DWITH_BUILDINFO=OFF \
-            -DWITH_OPENMP=OFF \
-            -DWITH_OPENGL=ON \
-            -DWITH_GHOST_SDL=OFF \
-            -DWITH_HEADLESS=ON
+          find "${GITHUB_WORKSPACE}/.." \
+            -type f \
+            -name "*.apk" \
+            -exec cp -f {} "${OUTPUT_DIR}/" \;
 
-          # Compile ARM64 Android Binaries / Libraries
-          ninja -j$(nproc)
+          echo "Collected APK files:"
+          find "${OUTPUT_DIR}" -type f -name "*.apk" -print
 
-      - name: STAGE 4 - Package and Upload Artifacts
+          if ! find "${OUTPUT_DIR}" -type f -name "*.apk" | grep -q .; then
+            echo "ERROR: No APK files were found"
+            exit 1
+          fi
+
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: blender-3.6-android-arm64
-          path: |
-            build_android/bin/
-            build_android/lib/
+          name: Blender-3.6-Zink-ARM64
+          path: ${{ github.workspace }}/output/*.apk
+          if-no-files-found: error
